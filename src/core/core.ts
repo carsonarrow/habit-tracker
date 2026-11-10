@@ -120,6 +120,15 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
       const deleted = db.delete(habits).where(eq(habits.id, id)).returning().get();
       if (!deleted) throw new Error(`Habit ${id} not found`);
     },
+    /** Habits that are not archived, regardless of Day; for management. */
+    activeHabits(): Habit[] {
+      return db
+        .select()
+        .from(habits)
+        .where(isNull(habits.archiveDay))
+        .orderBy(asc(habits.id))
+        .all();
+    },
     archivedHabits(): Habit[] {
       return db
         .select()

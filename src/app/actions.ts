@@ -3,13 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCore } from "@/core";
-import { isValidDay, type Day } from "@/core/day";
+import type { Day } from "@/core/day";
 
 export async function addHabit(formData: FormData) {
   const name = String(formData.get("name") ?? "");
   if (!name.trim()) return;
   getCore().addHabit(name);
   revalidatePath("/");
+  revalidatePath("/habits");
 }
 
 export async function toggleCheckIn(habitId: number, day: Day) {
@@ -17,42 +18,45 @@ export async function toggleCheckIn(habitId: number, day: Day) {
   revalidatePath("/");
 }
 
-export async function renameHabit(habitId: number, day: Day, formData: FormData) {
+export async function renameHabit(habitId: number, formData: FormData) {
   const name = String(formData.get("name") ?? "");
   if (!name.trim()) return;
   getCore().renameHabit(habitId, name);
   revalidatePath("/");
-  redirect(isValidDay(day) ? `/?day=${day}` : "/");
+  revalidatePath("/habits");
+  redirect("/habits");
 }
 
-export async function setStartDay(habitId: number, day: Day, formData: FormData) {
-  const back = isValidDay(day) ? day : "";
+export async function setStartDay(habitId: number, formData: FormData) {
   try {
     getCore().setStartDay(habitId, String(formData.get("startDay") ?? ""));
   } catch (e) {
     const message = e instanceof Error ? e.message : "Could not set Start Day";
-    const dayParam = back ? `day=${back}&` : "";
-    redirect(`/habits/${habitId}?${dayParam}error=${encodeURIComponent(message)}`);
+    redirect(`/habits/${habitId}?error=${encodeURIComponent(message)}`);
   }
   revalidatePath("/");
-  redirect(back ? `/?day=${back}` : "/");
+  revalidatePath("/habits");
+  redirect("/habits");
 }
 
-export async function archiveHabit(habitId: number, day: Day) {
+export async function archiveHabit(habitId: number) {
   getCore().archiveHabit(habitId);
   revalidatePath("/");
-  // The Habit is hidden from today on, so go back to the Day the user came from.
-  redirect(isValidDay(day) ? `/?day=${day}` : "/");
+  revalidatePath("/habits");
+  revalidatePath("/archived");
+  redirect("/habits");
 }
 
 export async function restoreHabit(habitId: number) {
   getCore().restoreHabit(habitId);
   revalidatePath("/");
+  revalidatePath("/habits");
   revalidatePath("/archived");
 }
 
 export async function deleteHabit(habitId: number) {
   getCore().deleteHabit(habitId);
   revalidatePath("/");
+  revalidatePath("/habits");
   revalidatePath("/archived");
 }
