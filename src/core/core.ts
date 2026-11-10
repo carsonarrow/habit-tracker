@@ -37,17 +37,33 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
       .map((h) => ({ ...h, checkedIn: Boolean(h.checkedIn) }));
   }
 
+  /** Trims a Habit name; throws if it is blank. */
+  const cleanName = (rawName: string): string => {
+    const name = rawName.trim();
+    if (!name) throw new Error("A Habit needs a name");
+    return name;
+  };
+
   return {
     today,
     habitsOn,
     addHabit(rawName: string): Habit {
-      const name = rawName.trim();
-      if (!name) throw new Error("A Habit needs a name");
+      const name = cleanName(rawName);
       return db
         .insert(habits)
         .values({ name, startDay: today(), createdAt: now() })
         .returning()
         .get();
+    },
+    getHabit(id: number): Habit | undefined {
+      return db.select().from(habits).where(eq(habits.id, id)).get();
+    },
+    /** Renames a Habit; its Check-ins are untouched. */
+    renameHabit(id: number, rawName: string): Habit {
+      const name = cleanName(rawName);
+      const updated = db.update(habits).set({ name }).where(eq(habits.id, id)).returning().get();
+      if (!updated) throw new Error(`Habit ${id} not found`);
+      return updated;
     },
     habitsForToday(): HabitOnDay[] {
       return habitsOn(today());

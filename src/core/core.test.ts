@@ -49,6 +49,28 @@ describe("Habits", () => {
   });
 });
 
+describe("Renaming a Habit", () => {
+  it("renames the Habit and keeps its Check-ins", () => {
+    const { core } = makeCore();
+    const habit = core.addHabit("Read");
+    core.toggleCheckIn(habit.id);
+    expect(core.renameHabit(habit.id, "  Read books ").name).toBe("Read books");
+    expect(core.habitsForToday()).toMatchObject([{ name: "Read books", checkedIn: true }]);
+  });
+
+  it("rejects a blank name and leaves the Habit unchanged", () => {
+    const { core } = makeCore();
+    const habit = core.addHabit("Read");
+    expect(() => core.renameHabit(habit.id, "   ")).toThrow(/name/i);
+    expect(core.getHabit(habit.id)?.name).toBe("Read");
+  });
+
+  it("throws for an unknown Habit", () => {
+    const { core } = makeCore();
+    expect(() => core.renameHabit(999, "Read")).toThrow(/not found/i);
+  });
+});
+
 describe("Check-ins", () => {
   it("toggling a Habit ticks it off today", () => {
     const { core } = makeCore();

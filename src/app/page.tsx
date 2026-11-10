@@ -2,7 +2,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getCore } from "@/core";
 import { isValidDay } from "@/core/day";
-import { Check } from "lucide-react";
+import { Check, Pencil } from "lucide-react";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { DayNav } from "./day-nav";
 import { addHabit, toggleCheckIn } from "./actions";
@@ -30,8 +31,8 @@ export default async function DayPage({
       ) : (
         <ul className="flex flex-col gap-2">
           {habits.map((habit) => (
-            <li key={habit.id}>
-              <form action={toggleCheckIn.bind(null, habit.id, day)}>
+            <li key={habit.id} className="flex items-center gap-2">
+              <form action={toggleCheckIn.bind(null, habit.id, day)} className="flex-1">
                 <button
                   type="submit"
                   aria-pressed={habit.checkedIn}
@@ -45,6 +46,13 @@ export default async function DayPage({
                   </span>
                 </button>
               </form>
+              <Link
+                href={`/habits/${habit.id}?day=${day}`}
+                aria-label={`Edit ${habit.name}`}
+                className="p-2 text-muted-foreground"
+              >
+                <Pencil className="size-4" />
+              </Link>
             </li>
           ))}
         </ul>
