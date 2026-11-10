@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { getCore } from "@/core";
+import { getCore, type HabitState } from "@/core";
 import type { Day } from "@/core/day";
 
 export async function addHabit(formData: FormData) {
@@ -13,8 +13,8 @@ export async function addHabit(formData: FormData) {
   revalidatePath("/habits");
 }
 
-export async function toggleCheckIn(habitId: number, day: Day) {
-  getCore().toggleCheckIn(habitId, day);
+export async function setState(habitId: number, state: HabitState, day: Day) {
+  getCore().setState(habitId, state, day);
   revalidatePath("/");
 }
 

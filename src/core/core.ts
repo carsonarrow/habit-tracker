@@ -13,8 +13,12 @@ export type CoreDeps = {
 
 export type Habit = typeof habits.$inferSelect;
 
-/** A Habit plus its Check-in state on a Day; `readOnly` when it is archived (shown only before its archive Day). */
-export type HabitOnDay = Habit & { checkedIn: boolean; readOnly: boolean };
+/** A Habit's state on a Day it is tracked: a Check-in's outcome, or Unrecorded when there is none. */
+const habitStates = ["done", "notDone", "unrecorded"] as const;
+export type HabitState = (typeof habitStates)[number];
+
+/** A Habit plus its state on a Day; `readOnly` when it is archived (shown only before its archive Day). */
+export type HabitOnDay = Habit & { state: HabitState; readOnly: boolean };
 
 export function createCore({ db, now, timeZone }: CoreDeps) {
   const today = (): Day => dayOf(now(), timeZone);
@@ -25,11 +29,11 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
     if (day > today()) throw new Error(`Day ${day} is in the future`);
   };
 
-  /** Habits with their Check-in state on `day` (today or earlier). */
+  /** Habits with their state on `day` (today or earlier). */
   function habitsOn(day: Day): HabitOnDay[] {
     assertViewable(day);
     return db
-      .select({ ...getTableColumns(habits), checkedIn: isNotNull(checkIns.day) })
+      .select({ ...getTableColumns(habits), outcome: checkIns.outcome })
       .from(habits)
       .leftJoin(checkIns, and(eq(checkIns.habitId, habits.id), eq(checkIns.day, day)))
       .where(
@@ -37,9 +41,9 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
       )
       .orderBy(asc(habits.id))
       .all()
-      .map((h) => ({
+      .map(({ outcome, ...h }) => ({
         ...h,
-        checkedIn: Boolean(h.checkedIn),
+        state: outcome ?? "unrecorded",
         readOnly: h.archiveDay !== null,
       }));
   }
@@ -140,23 +144,31 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
     habitsForToday(): HabitOnDay[] {
       return habitsOn(today());
     },
-    /** Ticks or unticks a Habit on `day` (default today). Returns whether it is now checked in. */
-    toggleCheckIn(habitId: number, day: Day = today()): boolean {
+    /**
+     * Makes `state` the Habit's state on `day` (default today): records a Check-in
+     * for Done or Not done, removes it for Unrecorded. Setting the current state is a no-op.
+     */
+    setState(habitId: number, state: HabitState, day: Day = today()): void {
+      // Server actions pass client input straight through, so check it at runtime.
+      if (!habitStates.includes(state)) throw new Error(`Invalid state: ${state}`);
       assertViewable(day);
-      return db.transaction((tx) => {
+      db.transaction((tx) => {
         const habit = tx.select().from(habits).where(eq(habits.id, habitId)).get();
         if (!habit) throw new Error(`Habit ${habitId} not found`);
         if (habit.archiveDay !== null) throw new Error(`Habit ${habitId} is archived`);
         if (day < habit.startDay) {
           throw new Error(`Day ${day} is before the Habit's Start Day ${habit.startDay}`);
         }
-        const removed = tx
-          .delete(checkIns)
-          .where(and(eq(checkIns.habitId, habitId), eq(checkIns.day, day)))
+        if (state === "unrecorded") {
+          tx.delete(checkIns)
+            .where(and(eq(checkIns.habitId, habitId), eq(checkIns.day, day)))
+            .run();
+          return;
+        }
+        tx.insert(checkIns)
+          .values({ habitId, day, outcome: state })
+          .onConflictDoUpdate({ target: [checkIns.habitId, checkIns.day], set: { outcome: state } })
           .run();
-        if (removed.changes > 0) return false;
-        tx.insert(checkIns).values({ habitId, day }).run();
-        return true;
       });
     },
   };

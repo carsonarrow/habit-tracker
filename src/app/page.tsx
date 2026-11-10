@@ -1,10 +1,11 @@
-import { getCore } from "@/core";
-import { isValidDay } from "@/core/day";
-import { Check, Settings } from "lucide-react";
+import { getCore, type HabitOnDay, type HabitState } from "@/core";
+import { isValidDay, type Day } from "@/core/day";
+import { Check, Settings, X, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { DayNav } from "./day-nav";
-import { toggleCheckIn } from "./actions";
+import { setState } from "./actions";
+import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -42,26 +43,64 @@ export default async function DayPage({
       ) : (
         <ul className="flex flex-col gap-2">
           {habits.map((habit) => (
-            <li key={habit.id}>
-              <form action={toggleCheckIn.bind(null, habit.id, day)}>
-                <button
-                  type="submit"
-                  disabled={habit.readOnly}
-                  aria-pressed={habit.checkedIn}
-                  className="flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left aria-pressed:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <span className="flex size-5 items-center justify-center rounded border">
-                    {habit.checkedIn && <Check className="size-4" />}
-                  </span>
-                  <span className={habit.checkedIn ? "text-muted-foreground line-through" : ""}>
-                    {habit.name}
-                  </span>
-                </button>
-              </form>
+            <li
+              key={habit.id}
+              className="flex items-center gap-2 rounded-md border py-1 pr-1 pl-3 data-[state=done]:bg-muted"
+              data-state={habit.state}
+            >
+              <span
+                className={cn(
+                  "flex-1",
+                  habit.state !== "unrecorded" && "text-muted-foreground",
+                  habit.state === "done" && "line-through",
+                )}
+              >
+                {habit.name}
+              </span>
+              <StateButton habit={habit} day={day} outcome="notDone" />
+              <StateButton habit={habit} day={day} outcome="done" />
             </li>
           ))}
         </ul>
       )}
     </main>
+  );
+}
+
+type Outcome = Exclude<HabitState, "unrecorded">;
+
+const outcomeButtons: Record<Outcome, { label: string; Icon: LucideIcon; pressed: string }> = {
+  done: {
+    label: "Done",
+    Icon: Check,
+    pressed:
+      "aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground",
+  },
+  notDone: {
+    label: "Not done",
+    Icon: X,
+    pressed: "aria-pressed:border-destructive aria-pressed:bg-destructive aria-pressed:text-white",
+  },
+};
+
+/** Records `outcome`, or clears back to Unrecorded when it is already the Habit's state. */
+function StateButton({ habit, day, outcome }: { habit: HabitOnDay; day: Day; outcome: Outcome }) {
+  const { label, Icon, pressed } = outcomeButtons[outcome];
+  const active = habit.state === outcome;
+  return (
+    <form action={setState.bind(null, habit.id, active ? "unrecorded" : outcome, day)}>
+      <button
+        type="submit"
+        disabled={habit.readOnly}
+        aria-pressed={active}
+        aria-label={`${label}: ${habit.name}`}
+        className={cn(
+          "flex size-9 items-center justify-center rounded-md border text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60",
+          pressed,
+        )}
+      >
+        <Icon className="size-4" />
+      </button>
+    </form>
   );
 }

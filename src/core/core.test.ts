@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { openDb } from "./db";
-import { createCore } from "./core";
-import { checkIns } from "./schema";
+import { createCore, type HabitState } from "./core";
+import { sql } from "drizzle-orm";
 
 const dirs: string[] = [];
 afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })));
@@ -51,12 +51,15 @@ describe("Habits", () => {
 });
 
 describe("Renaming a Habit", () => {
-  it("renames the Habit and keeps its Check-ins", () => {
+  it("renames the Habit and keeps its Check-ins and their outcomes", () => {
     const { core } = makeCore();
     const habit = core.addHabit("Read");
-    core.toggleCheckIn(habit.id);
+    core.setStartDay(habit.id, "2026-03-09");
+    core.setState(habit.id, "notDone", "2026-03-09");
+    core.setState(habit.id, "done");
     expect(core.renameHabit(habit.id, "  Read books ").name).toBe("Read books");
-    expect(core.habitsForToday()).toMatchObject([{ name: "Read books", checkedIn: true }]);
+    expect(core.habitsOn("2026-03-09")).toMatchObject([{ name: "Read books", state: "notDone" }]);
+    expect(core.habitsForToday()).toMatchObject([{ name: "Read books", state: "done" }]);
   });
 
   it("rejects a blank name and leaves the Habit unchanged", () => {
@@ -73,39 +76,56 @@ describe("Renaming a Habit", () => {
 });
 
 describe("Check-ins", () => {
-  it("toggling a Habit ticks it off today", () => {
+  it("a new Habit is Unrecorded today", () => {
     const { core } = makeCore();
-    const habit = core.addHabit("Read");
-    expect(core.toggleCheckIn(habit.id)).toBe(true);
-    expect(core.habitsForToday()).toMatchObject([{ name: "Read", checkedIn: true }]);
+    core.addHabit("Read");
+    expect(core.habitsForToday()).toMatchObject([{ name: "Read", state: "unrecorded" }]);
   });
 
-  it("toggling again unticks it", () => {
+  it("records Done, then Not done, then clears back to Unrecorded", () => {
     const { core } = makeCore();
     const habit = core.addHabit("Read");
-    core.toggleCheckIn(habit.id);
-    expect(core.toggleCheckIn(habit.id)).toBe(false);
-    expect(core.habitsForToday()).toMatchObject([{ checkedIn: false }]);
+    core.setState(habit.id, "done");
+    expect(core.habitsForToday()).toMatchObject([{ state: "done" }]);
+    core.setState(habit.id, "notDone");
+    expect(core.habitsForToday()).toMatchObject([{ state: "notDone" }]);
+    core.setState(habit.id, "unrecorded");
+    expect(core.habitsForToday()).toMatchObject([{ state: "unrecorded" }]);
+    core.setState(habit.id, "done");
+    expect(core.habitsForToday()).toMatchObject([{ state: "done" }]);
   });
 
-  it("alternates on repeated toggles, never doubling a Check-in", () => {
+  it("switches directly between Done and Not done", () => {
+    const { core } = makeCore();
+    const habit = core.addHabit("Read");
+    core.setState(habit.id, "done");
+    core.setState(habit.id, "notDone");
+    expect(core.habitsForToday()).toMatchObject([{ state: "notDone" }]);
+    core.setState(habit.id, "done");
+    expect(core.habitsForToday()).toMatchObject([{ state: "done" }]);
+  });
+
+  it("setting the current state again changes nothing", () => {
     const { core } = makeCore();
     const read = core.addHabit("Read");
     core.addHabit("Walk");
-    expect([1, 2, 3].map(() => core.toggleCheckIn(read.id))).toEqual([true, false, true]);
-    expect(core.habitsForToday().map((h) => [h.name, h.checkedIn])).toEqual([
-      ["Read", true],
-      ["Walk", false],
+    core.setState(read.id, "unrecorded");
+    expect(core.habitsForToday()).toMatchObject([{ state: "unrecorded" }, { state: "unrecorded" }]);
+    core.setState(read.id, "notDone");
+    core.setState(read.id, "notDone");
+    expect(core.habitsForToday().map((h) => [h.name, h.state])).toEqual([
+      ["Read", "notDone"],
+      ["Walk", "unrecorded"],
     ]);
   });
 
-  it("a Check-in belongs to today only", () => {
+  it("an answer belongs to today only", () => {
     const { core, setNow } = makeCore({ now: new Date("2026-03-10T23:00:00Z") });
     const habit = core.addHabit("Read");
-    core.toggleCheckIn(habit.id);
+    core.setState(habit.id, "notDone");
     setNow(new Date("2026-03-11T01:00:00Z"));
-    expect(core.habitsForToday()).toMatchObject([{ checkedIn: false }]);
-    expect(core.toggleCheckIn(habit.id)).toBe(true);
+    expect(core.habitsForToday()).toMatchObject([{ state: "unrecorded" }]);
+    expect(core.habitsOn("2026-03-10")).toMatchObject([{ state: "notDone" }]);
   });
 
   it("persists across reopening the database", () => {
@@ -114,41 +134,69 @@ describe("Check-ins", () => {
     const file = path.join(dir, "test.db");
     const now = () => new Date("2026-03-10T12:00:00Z");
     const first = createCore({ db: openDb(file), now, timeZone: "UTC" });
-    first.toggleCheckIn(first.addHabit("Read").id);
+    first.setState(first.addHabit("Read").id, "done");
+    first.setState(first.addHabit("Walk").id, "notDone");
+    first.addHabit("Meditate");
     const second = createCore({ db: openDb(file), now, timeZone: "UTC" });
-    expect(second.habitsForToday()).toMatchObject([{ name: "Read", checkedIn: true }]);
+    expect(second.habitsForToday().map((h) => [h.name, h.state])).toEqual([
+      ["Read", "done"],
+      ["Walk", "notDone"],
+      ["Meditate", "unrecorded"],
+    ]);
   });
 
-  it("rejects a Check-in for an unknown Habit", () => {
+  it("reads a Check-in from before outcomes existed as Done", () => {
+    const { core, db } = makeCore();
+    const habit = core.addHabit("Read");
+    // An old-style row, written without an outcome.
+    db.run(sql`INSERT INTO check_ins (habit_id, day) VALUES (${habit.id}, '2026-03-10')`);
+    expect(core.habitsForToday()).toMatchObject([{ state: "done" }]);
+  });
+
+  it("rejects a state other than Done, Not done or Unrecorded", () => {
     const { core } = makeCore();
-    expect(() => core.toggleCheckIn(999)).toThrow();
+    const habit = core.addHabit("Read");
+    expect(() => core.setState(habit.id, "skipped" as HabitState)).toThrow(/state/i);
+    expect(core.habitsForToday()).toMatchObject([{ state: "unrecorded" }]);
+  });
+
+  it("rejects an answer for an unknown Habit", () => {
+    const { core } = makeCore();
+    expect(() => core.setState(999, "done")).toThrow(/not found/i);
   });
 });
 
 describe("Moving between Days", () => {
-  it("toggles a Check-in on a past Day without touching today", () => {
+  it("sets any state on a past Day without touching other Days", () => {
     const { core } = makeCore();
     const habit = core.addHabit("Read");
     core.setStartDay(habit.id, "2026-03-08");
-    expect(core.toggleCheckIn(habit.id, "2026-03-08")).toBe(true);
-    expect(core.habitsOn("2026-03-08")).toMatchObject([{ checkedIn: true }]);
-    expect(core.habitsOn("2026-03-09")).toMatchObject([{ checkedIn: false }]);
-    expect(core.habitsForToday()).toMatchObject([{ checkedIn: false }]);
-    expect(core.toggleCheckIn(habit.id, "2026-03-08")).toBe(false);
+    core.setState(habit.id, "done", "2026-03-08");
+    core.setState(habit.id, "notDone", "2026-03-09");
+    expect(core.habitsOn("2026-03-08")).toMatchObject([{ state: "done" }]);
+    expect(core.habitsOn("2026-03-09")).toMatchObject([{ state: "notDone" }]);
+    expect(core.habitsForToday()).toMatchObject([{ state: "unrecorded" }]);
+    core.setState(habit.id, "unrecorded", "2026-03-08");
+    expect(core.habitsOn("2026-03-08")).toMatchObject([{ state: "unrecorded" }]);
+    expect(core.habitsOn("2026-03-09")).toMatchObject([{ state: "notDone" }]);
   });
 
-  it("rejects listing and toggling Days after today", () => {
+  it("rejects listing and answering Days after today", () => {
     const { core } = makeCore();
     const habit = core.addHabit("Read");
     expect(() => core.habitsOn("2026-03-11")).toThrow(/future/i);
-    expect(() => core.toggleCheckIn(habit.id, "2026-03-11")).toThrow(/future/i);
-    expect(core.habitsOn("2026-03-10")).toHaveLength(1);
+    expect(() => core.setState(habit.id, "done", "2026-03-11")).toThrow(/future/i);
+    expect(() => core.setState(habit.id, "notDone", "2026-03-11")).toThrow(/future/i);
+    expect(() => core.setState(habit.id, "unrecorded", "2026-03-11")).toThrow(/future/i);
+    expect(core.habitsOn("2026-03-10")).toMatchObject([{ state: "unrecorded" }]);
   });
 
   it("rejects a malformed Day", () => {
     const { core } = makeCore();
+    const habit = core.addHabit("Read");
     expect(() => core.habitsOn("yesterday")).toThrow(/day/i);
     expect(() => core.habitsOn("2026-02-30")).toThrow(/day/i);
+    expect(() => core.setState(habit.id, "done", "2026-02-30")).toThrow(/day/i);
   });
 
   it("derives today across midnight in a non-UTC time zone", () => {
@@ -158,29 +206,33 @@ describe("Moving between Days", () => {
     });
     const habit = core.addHabit("Read");
     expect(core.today()).toBe("2026-03-09");
-    expect(() => core.toggleCheckIn(habit.id, "2026-03-10")).toThrow(/future/i);
+    expect(() => core.setState(habit.id, "done", "2026-03-10")).toThrow(/future/i);
     setNow(new Date("2026-03-10T04:00:00Z")); // midnight in New York
     expect(core.today()).toBe("2026-03-10");
-    expect(core.toggleCheckIn(habit.id, "2026-03-10")).toBe(true);
-    expect(core.habitsOn("2026-03-09")).toMatchObject([{ checkedIn: false }]);
+    core.setState(habit.id, "done");
+    expect(core.habitsOn("2026-03-10")).toMatchObject([{ state: "done" }]);
+    expect(core.habitsOn("2026-03-09")).toMatchObject([{ state: "unrecorded" }]);
   });
 });
 
 describe("Start Day", () => {
-  it("can be backdated, making the Habit appear and toggleable on earlier Days", () => {
+  it("can be backdated, making the Habit appear Unrecorded and answerable on earlier Days", () => {
     const { core } = makeCore();
     const habit = core.addHabit("Read");
     expect(core.habitsOn("2026-03-08")).toEqual([]);
     expect(core.setStartDay(habit.id, "2026-03-08").startDay).toBe("2026-03-08");
-    expect(core.habitsOn("2026-03-08")).toMatchObject([{ name: "Read", checkedIn: false }]);
-    expect(core.toggleCheckIn(habit.id, "2026-03-08")).toBe(true);
+    expect(core.habitsOn("2026-03-08")).toMatchObject([{ name: "Read", state: "unrecorded" }]);
+    core.setState(habit.id, "notDone", "2026-03-08");
+    expect(core.habitsOn("2026-03-08")).toMatchObject([{ state: "notDone" }]);
   });
 
-  it("hides the Habit on Days before it and rejects toggling there", () => {
+  it("hides the Habit on Days before it and rejects answering there", () => {
     const { core } = makeCore();
     const habit = core.addHabit("Read");
     expect(core.habitsOn("2026-03-09")).toEqual([]);
-    expect(() => core.toggleCheckIn(habit.id, "2026-03-09")).toThrow(/start day/i);
+    expect(() => core.setState(habit.id, "done", "2026-03-09")).toThrow(/start day/i);
+    expect(() => core.setState(habit.id, "notDone", "2026-03-09")).toThrow(/start day/i);
+    expect(() => core.setState(habit.id, "unrecorded", "2026-03-09")).toThrow(/start day/i);
     expect(core.habitsOn("2026-03-10")).toHaveLength(1);
   });
 
@@ -192,14 +244,23 @@ describe("Start Day", () => {
     expect(core.getHabit(habit.id)?.startDay).toBe("2026-03-10");
   });
 
-  it("rejects moving it past an existing Check-in, leaving it unchanged", () => {
+  it("rejects moving it past a Done Check-in, leaving it unchanged", () => {
     const { core } = makeCore();
     const habit = core.addHabit("Read");
     core.setStartDay(habit.id, "2026-03-05");
-    core.toggleCheckIn(habit.id, "2026-03-06");
+    core.setState(habit.id, "done", "2026-03-06");
     expect(() => core.setStartDay(habit.id, "2026-03-07")).toThrow(/check-in.*2026-03-06/i);
     expect(core.getHabit(habit.id)?.startDay).toBe("2026-03-05");
     expect(core.setStartDay(habit.id, "2026-03-06").startDay).toBe("2026-03-06");
+  });
+
+  it("rejects moving it past a Not done Check-in too", () => {
+    const { core } = makeCore();
+    const habit = core.addHabit("Read");
+    core.setStartDay(habit.id, "2026-03-05");
+    core.setState(habit.id, "notDone", "2026-03-07");
+    expect(() => core.setStartDay(habit.id, "2026-03-08")).toThrow(/check-in.*2026-03-07/i);
+    expect(core.getHabit(habit.id)?.startDay).toBe("2026-03-05");
   });
 
   it("throws for an unknown Habit", () => {
@@ -218,16 +279,19 @@ describe("Archiving a Habit", () => {
     expect(core.habitsOn("2026-03-12")).toEqual([]);
   });
 
-  it("shows read-only with its Check-in state on earlier Days", () => {
+  it("shows read-only with its Done, Not done or Unrecorded state on earlier Days", () => {
     const { core, setNow } = makeCore();
     const habit = core.addHabit("Read");
-    core.toggleCheckIn(habit.id);
+    core.setStartDay(habit.id, "2026-03-09");
+    core.setState(habit.id, "notDone", "2026-03-09");
+    core.setState(habit.id, "done");
     setNow(new Date("2026-03-12T12:00:00Z"));
     core.archiveHabit(habit.id);
-    expect(core.habitsOn("2026-03-10")).toMatchObject([
-      { name: "Read", checkedIn: true, readOnly: true },
+    expect(core.habitsOn("2026-03-09")).toMatchObject([
+      { name: "Read", state: "notDone", readOnly: true },
     ]);
-    expect(core.habitsOn("2026-03-11")).toMatchObject([{ checkedIn: false, readOnly: true }]);
+    expect(core.habitsOn("2026-03-10")).toMatchObject([{ state: "done", readOnly: true }]);
+    expect(core.habitsOn("2026-03-11")).toMatchObject([{ state: "unrecorded", readOnly: true }]);
   });
 
   it("is hidden on the archive Day itself but visible the Day before", () => {
@@ -256,13 +320,16 @@ describe("Archiving a Habit", () => {
     expect(core.habitsForToday()[0].readOnly).toBe(false);
   });
 
-  it("rejects toggling an Archived Habit on any Day", () => {
+  it("rejects any answer on an Archived Habit on any Day", () => {
     const { core, setNow } = makeCore();
     const habit = core.addHabit("Read");
+    core.setState(habit.id, "done");
     setNow(new Date("2026-03-12T12:00:00Z"));
     core.archiveHabit(habit.id);
-    expect(() => core.toggleCheckIn(habit.id, "2026-03-10")).toThrow(/archived/i);
-    expect(() => core.toggleCheckIn(habit.id)).toThrow(/archived/i);
+    expect(() => core.setState(habit.id, "unrecorded", "2026-03-10")).toThrow(/archived/i);
+    expect(() => core.setState(habit.id, "notDone", "2026-03-11")).toThrow(/archived/i);
+    expect(() => core.setState(habit.id, "done")).toThrow(/archived/i);
+    expect(core.habitsOn("2026-03-10")).toMatchObject([{ state: "done" }]);
   });
 
   it("lists active Habits for management, excluding Archived ones", () => {
@@ -277,7 +344,9 @@ describe("Archiving a Habit", () => {
     const { core, setNow } = makeCore();
     const habit = core.addHabit("Read");
     core.addHabit("Walk");
-    core.toggleCheckIn(habit.id);
+    core.setState(habit.id, "done");
+    setNow(new Date("2026-03-11T12:00:00Z"));
+    core.setState(habit.id, "notDone");
     setNow(new Date("2026-03-12T12:00:00Z"));
     core.archiveHabit(habit.id);
     expect(core.archivedHabits().map((h) => h.name)).toEqual(["Read"]);
@@ -286,11 +355,12 @@ describe("Archiving a Habit", () => {
     expect(core.archivedHabits()).toEqual([]);
     // Active on every Day since its Start Day, including the archived gap.
     expect(core.habitsOn("2026-03-11")).toMatchObject([
-      { name: "Read", readOnly: false },
+      { name: "Read", state: "notDone", readOnly: false },
       { name: "Walk" },
     ]);
-    expect(core.habitsOn("2026-03-10")[0]).toMatchObject({ checkedIn: true });
-    expect(core.toggleCheckIn(habit.id)).toBe(true);
+    expect(core.habitsOn("2026-03-10")[0]).toMatchObject({ state: "done" });
+    core.setState(habit.id, "done");
+    expect(core.habitsForToday()[0]).toMatchObject({ state: "done" });
   });
 
   it("throws for an unknown Habit", () => {
@@ -301,22 +371,26 @@ describe("Archiving a Habit", () => {
 });
 
 describe("Deleting a Habit", () => {
-  it("removes the Habit and all its Check-ins, leaving other Habits alone", () => {
-    const { core, db, setNow } = makeCore();
+  it("removes the Habit, leaving other Habits and their Check-ins alone", () => {
+    const { core, setNow } = makeCore();
     const read = core.addHabit("Read");
     const walk = core.addHabit("Walk");
-    core.toggleCheckIn(read.id);
-    core.toggleCheckIn(walk.id);
+    core.setState(read.id, "done");
+    core.setState(walk.id, "notDone");
     setNow(new Date("2026-03-11T12:00:00Z"));
-    core.toggleCheckIn(read.id);
+    core.setState(read.id, "notDone");
     core.archiveHabit(read.id);
 
     core.deleteHabit(read.id);
 
     expect(core.getHabit(read.id)).toBeUndefined();
     expect(core.archivedHabits()).toEqual([]);
-    expect(db.select().from(checkIns).all()).toEqual([{ habitId: walk.id, day: "2026-03-10" }]);
-    expect(core.habitsOn("2026-03-10").map((h) => h.name)).toEqual(["Walk"]);
+    expect(core.habitsOn("2026-03-10").map((h) => [h.name, h.state])).toEqual([
+      ["Walk", "notDone"],
+    ]);
+    expect(core.habitsOn("2026-03-11").map((h) => [h.name, h.state])).toEqual([
+      ["Walk", "unrecorded"],
+    ]);
   });
 
   it("throws for an unknown Habit", () => {

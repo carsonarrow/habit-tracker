@@ -22,6 +22,13 @@
       "when": 1794347196488,
       "tag": "0002_thick_guardsmen",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1794352660552,
+      "tag": "0003_slimy_goblin_queen",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+ALTER TABLE `check_ins` ADD `outcome` text DEFAULT 'done' NOT NULL;
