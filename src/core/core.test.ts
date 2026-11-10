@@ -229,6 +229,26 @@ describe("Archiving a Habit", () => {
     expect(core.habitsOn("2026-03-11")).toMatchObject([{ checkedIn: false, readOnly: true }]);
   });
 
+  it("is hidden on the archive Day itself but visible the Day before", () => {
+    const { core } = makeCore();
+    const habit = core.addHabit("Read");
+    core.archiveHabit(habit.id);
+    expect(core.habitsOn("2026-03-10")).toEqual([]);
+    const other = makeCore({ now: new Date("2026-03-09T12:00:00Z") });
+    const h2 = other.core.addHabit("Walk");
+    other.setNow(new Date("2026-03-10T12:00:00Z"));
+    other.core.archiveHabit(h2.id);
+    expect(other.core.habitsOn("2026-03-09")).toMatchObject([{ readOnly: true }]);
+  });
+
+  it("keeps the original archive Day when archived again", () => {
+    const { core, setNow } = makeCore();
+    const habit = core.addHabit("Read");
+    core.archiveHabit(habit.id);
+    setNow(new Date("2026-03-12T12:00:00Z"));
+    expect(core.archiveHabit(habit.id).archiveDay).toBe("2026-03-10");
+  });
+
   it("marks active Habits as not read-only", () => {
     const { core } = makeCore();
     core.addHabit("Read");

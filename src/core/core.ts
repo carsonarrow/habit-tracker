@@ -94,10 +94,9 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
     },
     /** Archives a Habit as of today; already-archived Habits keep their archive Day. */
     archiveHabit(id: number): Habit {
-      const today_ = today();
       const updated = db
         .update(habits)
-        .set({ archiveDay: today_ })
+        .set({ archiveDay: today() })
         .where(and(eq(habits.id, id), isNull(habits.archiveDay)))
         .returning()
         .get();
