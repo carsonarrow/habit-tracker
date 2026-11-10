@@ -115,6 +115,11 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
       if (!updated) throw new Error(`Habit ${id} not found`);
       return updated;
     },
+    /** Permanently removes a Habit; its Check-ins go with it (cascade). */
+    deleteHabit(id: number): void {
+      const deleted = db.delete(habits).where(eq(habits.id, id)).returning().get();
+      if (!deleted) throw new Error(`Habit ${id} not found`);
+    },
     archivedHabits(): Habit[] {
       return db
         .select()

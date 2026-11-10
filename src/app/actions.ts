@@ -50,3 +50,9 @@ export async function restoreHabit(habitId: number) {
   revalidatePath("/");
   revalidatePath("/archived");
 }
+
+export async function deleteHabit(habitId: number) {
+  getCore().deleteHabit(habitId);
+  revalidatePath("/");
+  revalidatePath("/archived");
+}

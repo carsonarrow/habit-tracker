@@ -3,6 +3,7 @@ import { getCore } from "@/core";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { restoreHabit } from "../actions";
+import { DeleteButton } from "./delete-button";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,7 @@ export default function ArchivedPage() {
                   Restore
                 </Button>
               </form>
+              <DeleteButton habitId={habit.id} name={habit.name} />
             </li>
           ))}
         </ul>

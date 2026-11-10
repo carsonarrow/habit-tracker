@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { openDb } from "./db";
 import { createCore } from "./core";
+import { checkIns } from "./schema";
 
 const dirs: string[] = [];
 afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })));
@@ -14,7 +15,7 @@ function makeCore(opts: { now?: Date; timeZone?: string } = {}) {
   const db = openDb(path.join(dir, "test.db"));
   let now = opts.now ?? new Date("2026-03-10T12:00:00Z");
   const core = createCore({ db, now: () => now, timeZone: opts.timeZone ?? "UTC" });
-  return { core, setNow: (d: Date) => (now = d) };
+  return { core, db, setNow: (d: Date) => (now = d) };
 }
 
 describe("Habits", () => {
@@ -288,5 +289,30 @@ describe("Archiving a Habit", () => {
     const { core } = makeCore();
     expect(() => core.archiveHabit(99)).toThrow(/not found/);
     expect(() => core.restoreHabit(99)).toThrow(/not found/);
+  });
+});
+
+describe("Deleting a Habit", () => {
+  it("removes the Habit and all its Check-ins, leaving other Habits alone", () => {
+    const { core, db, setNow } = makeCore();
+    const read = core.addHabit("Read");
+    const walk = core.addHabit("Walk");
+    core.toggleCheckIn(read.id);
+    core.toggleCheckIn(walk.id);
+    setNow(new Date("2026-03-11T12:00:00Z"));
+    core.toggleCheckIn(read.id);
+    core.archiveHabit(read.id);
+
+    core.deleteHabit(read.id);
+
+    expect(core.getHabit(read.id)).toBeUndefined();
+    expect(core.archivedHabits()).toEqual([]);
+    expect(db.select().from(checkIns).all()).toEqual([{ habitId: walk.id, day: "2026-03-10" }]);
+    expect(core.habitsOn("2026-03-10").map((h) => h.name)).toEqual(["Walk"]);
+  });
+
+  it("throws for an unknown Habit", () => {
+    const { core } = makeCore();
+    expect(() => core.deleteHabit(99)).toThrow(/not found/);
   });
 });
