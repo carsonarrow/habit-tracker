@@ -5,7 +5,7 @@ import { isValidDay } from "@/core/day";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { renameHabit } from "../../actions";
+import { renameHabit, setStartDay } from "../../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -14,10 +14,10 @@ export default async function HabitPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ day?: string }>;
+  searchParams: Promise<{ day?: string; error?: string }>;
 }) {
   const { id } = await params;
-  const { day } = await searchParams;
+  const { day, error } = await searchParams;
   const core = getCore();
   const habit = /^\d+$/.test(id) ? core.getHabit(Number(id)) : undefined;
   if (!habit) notFound();
@@ -33,6 +33,31 @@ export default async function HabitPage({
       <form action={renameHabit.bind(null, habit.id, backDay)} className="flex gap-2">
         <Input name="name" defaultValue={habit.name} aria-label="Habit name" required />
         <Button type="submit">Save</Button>
+      </form>
+      <form action={setStartDay.bind(null, habit.id, backDay)} className="flex flex-col gap-2">
+        <label htmlFor="startDay" className="text-sm font-medium">
+          Start Day
+        </label>
+        <div className="flex gap-2">
+          <Input
+            id="startDay"
+            name="startDay"
+            type="date"
+            defaultValue={habit.startDay}
+            max={core.today()}
+            required
+          />
+          <Button type="submit">Save</Button>
+        </div>
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
+        <p className="text-sm text-muted-foreground">
+          The Habit won&apos;t appear on Days before this. It can&apos;t move past an existing
+          Check-in.
+        </p>
       </form>
     </main>
   );

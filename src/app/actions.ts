@@ -24,3 +24,16 @@ export async function renameHabit(habitId: number, day: Day, formData: FormData)
   revalidatePath("/");
   redirect(isValidDay(day) ? `/?day=${day}` : "/");
 }
+
+export async function setStartDay(habitId: number, day: Day, formData: FormData) {
+  const back = isValidDay(day) ? day : "";
+  try {
+    getCore().setStartDay(habitId, String(formData.get("startDay") ?? ""));
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Could not set Start Day";
+    const dayParam = back ? `day=${back}&` : "";
+    redirect(`/habits/${habitId}?${dayParam}error=${encodeURIComponent(message)}`);
+  }
+  revalidatePath("/");
+  redirect(back ? `/?day=${back}` : "/");
+}

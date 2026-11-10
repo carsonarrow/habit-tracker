@@ -128,6 +128,7 @@ describe("Moving between Days", () => {
   it("toggles a Check-in on a past Day without touching today", () => {
     const { core } = makeCore();
     const habit = core.addHabit("Read");
+    core.setStartDay(habit.id, "2026-03-08");
     expect(core.toggleCheckIn(habit.id, "2026-03-08")).toBe(true);
     expect(core.habitsOn("2026-03-08")).toMatchObject([{ checkedIn: true }]);
     expect(core.habitsOn("2026-03-09")).toMatchObject([{ checkedIn: false }]);
@@ -161,5 +162,47 @@ describe("Moving between Days", () => {
     expect(core.today()).toBe("2026-03-10");
     expect(core.toggleCheckIn(habit.id, "2026-03-10")).toBe(true);
     expect(core.habitsOn("2026-03-09")).toMatchObject([{ checkedIn: false }]);
+  });
+});
+
+describe("Start Day", () => {
+  it("can be backdated, making the Habit appear and toggleable on earlier Days", () => {
+    const { core } = makeCore();
+    const habit = core.addHabit("Read");
+    expect(core.habitsOn("2026-03-08")).toEqual([]);
+    expect(core.setStartDay(habit.id, "2026-03-08").startDay).toBe("2026-03-08");
+    expect(core.habitsOn("2026-03-08")).toMatchObject([{ name: "Read", checkedIn: false }]);
+    expect(core.toggleCheckIn(habit.id, "2026-03-08")).toBe(true);
+  });
+
+  it("hides the Habit on Days before it and rejects toggling there", () => {
+    const { core } = makeCore();
+    const habit = core.addHabit("Read");
+    expect(core.habitsOn("2026-03-09")).toEqual([]);
+    expect(() => core.toggleCheckIn(habit.id, "2026-03-09")).toThrow(/start day/i);
+    expect(core.habitsOn("2026-03-10")).toHaveLength(1);
+  });
+
+  it("rejects a future or malformed Start Day", () => {
+    const { core } = makeCore();
+    const habit = core.addHabit("Read");
+    expect(() => core.setStartDay(habit.id, "2026-03-11")).toThrow(/future/i);
+    expect(() => core.setStartDay(habit.id, "nope")).toThrow(/day/i);
+    expect(core.getHabit(habit.id)?.startDay).toBe("2026-03-10");
+  });
+
+  it("rejects moving it past an existing Check-in, leaving it unchanged", () => {
+    const { core } = makeCore();
+    const habit = core.addHabit("Read");
+    core.setStartDay(habit.id, "2026-03-05");
+    core.toggleCheckIn(habit.id, "2026-03-06");
+    expect(() => core.setStartDay(habit.id, "2026-03-07")).toThrow(/check-in.*2026-03-06/i);
+    expect(core.getHabit(habit.id)?.startDay).toBe("2026-03-05");
+    expect(core.setStartDay(habit.id, "2026-03-06").startDay).toBe("2026-03-06");
+  });
+
+  it("throws for an unknown Habit", () => {
+    const { core } = makeCore();
+    expect(() => core.setStartDay(999, "2026-03-10")).toThrow(/not found/i);
   });
 });

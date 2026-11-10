@@ -1,4 +1,4 @@
-import { and, asc, eq, getTableColumns, isNotNull } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, isNotNull, lte, min } from "drizzle-orm";
 import type { Db } from "./db";
 import { dayOf, isValidDay, type Day } from "./day";
 import { checkIns, habits } from "./schema";
@@ -32,6 +32,7 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
       .select({ ...getTableColumns(habits), checkedIn: isNotNull(checkIns.day) })
       .from(habits)
       .leftJoin(checkIns, and(eq(checkIns.habitId, habits.id), eq(checkIns.day, day)))
+      .where(lte(habits.startDay, day))
       .orderBy(asc(habits.id))
       .all()
       .map((h) => ({ ...h, checkedIn: Boolean(h.checkedIn) }));
@@ -65,6 +66,26 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
       if (!updated) throw new Error(`Habit ${id} not found`);
       return updated;
     },
+    /**
+     * Sets a Habit's Start Day (today or earlier). Rejected if the Habit already
+     * has a Check-in before the new Start Day, so history is never hidden.
+     */
+    setStartDay(id: number, day: Day): Habit {
+      assertViewable(day);
+      return db.transaction((tx) => {
+        const habit = tx.select().from(habits).where(eq(habits.id, id)).get();
+        if (!habit) throw new Error(`Habit ${id} not found`);
+        const first = tx
+          .select({ day: min(checkIns.day) })
+          .from(checkIns)
+          .where(eq(checkIns.habitId, id))
+          .get()?.day;
+        if (first && first < day) {
+          throw new Error(`Habit has a Check-in on ${first}, before Start Day ${day}`);
+        }
+        return tx.update(habits).set({ startDay: day }).where(eq(habits.id, id)).returning().get();
+      });
+    },
     habitsForToday(): HabitOnDay[] {
       return habitsOn(today());
     },
@@ -72,6 +93,11 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
     toggleCheckIn(habitId: number, day: Day = today()): boolean {
       assertViewable(day);
       return db.transaction((tx) => {
+        const habit = tx.select().from(habits).where(eq(habits.id, habitId)).get();
+        if (!habit) throw new Error(`Habit ${habitId} not found`);
+        if (day < habit.startDay) {
+          throw new Error(`Day ${day} is before the Habit's Start Day ${habit.startDay}`);
+        }
         const removed = tx
           .delete(checkIns)
           .where(and(eq(checkIns.habitId, habitId), eq(checkIns.day, day)))
