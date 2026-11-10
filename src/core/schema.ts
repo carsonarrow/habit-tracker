@@ -10,7 +10,7 @@ export const habits = sqliteTable("habits", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
-/** A Check-in: at most one per (Habit, Day), enforced by the primary key. */
+/** A Check-in (Done or Not done): at most one per (Habit, Day), enforced by the primary key. */
 export const checkIns = sqliteTable(
   "check_ins",
   {
@@ -18,6 +18,10 @@ export const checkIns = sqliteTable(
       .notNull()
       .references(() => habits.id, { onDelete: "cascade" }),
     day: text("day").notNull(),
+    // Unrecorded is the absence of a Check-in, never a stored value.
+    outcome: text("outcome", { enum: ["done", "notDone"] })
+      .notNull()
+      .default("done"),
   },
   (t) => [primaryKey({ columns: [t.habitId, t.day] })],
 );

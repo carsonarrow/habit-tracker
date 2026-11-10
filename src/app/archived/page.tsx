@@ -12,8 +12,8 @@ export default function ArchivedPage() {
 
   return (
     <main className="mx-auto flex max-w-md flex-col gap-6 p-6">
-      <Link href="/" className="flex items-center gap-1 text-sm text-muted-foreground">
-        <ArrowLeft className="size-4" /> Back to Day
+      <Link href="/habits" className="flex items-center gap-1 text-sm text-muted-foreground">
+        <ArrowLeft className="size-4" /> Back to Habits
       </Link>
       <h1 className="text-xl font-semibold">Archived Habits</h1>
       {habits.length === 0 ? (
