@@ -101,3 +101,43 @@ describe("Check-ins", () => {
     expect(() => core.toggleCheckIn(999)).toThrow();
   });
 });
+
+describe("Moving between Days", () => {
+  it("toggles a Check-in on a past Day without touching today", () => {
+    const { core } = makeCore();
+    const habit = core.addHabit("Read");
+    expect(core.toggleCheckIn(habit.id, "2026-03-08")).toBe(true);
+    expect(core.habitsOn("2026-03-08")).toMatchObject([{ checkedIn: true }]);
+    expect(core.habitsOn("2026-03-09")).toMatchObject([{ checkedIn: false }]);
+    expect(core.habitsForToday()).toMatchObject([{ checkedIn: false }]);
+    expect(core.toggleCheckIn(habit.id, "2026-03-08")).toBe(false);
+  });
+
+  it("rejects listing and toggling Days after today", () => {
+    const { core } = makeCore();
+    const habit = core.addHabit("Read");
+    expect(() => core.habitsOn("2026-03-11")).toThrow(/future/i);
+    expect(() => core.toggleCheckIn(habit.id, "2026-03-11")).toThrow(/future/i);
+    expect(core.habitsOn("2026-03-10")).toHaveLength(1);
+  });
+
+  it("rejects a malformed Day", () => {
+    const { core } = makeCore();
+    expect(() => core.habitsOn("yesterday")).toThrow(/day/i);
+    expect(() => core.habitsOn("2026-02-30")).toThrow(/day/i);
+  });
+
+  it("derives today across midnight in a non-UTC time zone", () => {
+    const { core, setNow } = makeCore({
+      now: new Date("2026-03-10T03:59:00Z"), // 23:59 in New York (EDT, UTC-4)
+      timeZone: "America/New_York",
+    });
+    const habit = core.addHabit("Read");
+    expect(core.today()).toBe("2026-03-09");
+    expect(() => core.toggleCheckIn(habit.id, "2026-03-10")).toThrow(/future/i);
+    setNow(new Date("2026-03-10T04:00:00Z")); // midnight in New York
+    expect(core.today()).toBe("2026-03-10");
+    expect(core.toggleCheckIn(habit.id, "2026-03-10")).toBe(true);
+    expect(core.habitsOn("2026-03-09")).toMatchObject([{ checkedIn: false }]);
+  });
+});

@@ -1,21 +1,29 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getCore } from "@/core";
+import { isValidDay } from "@/core/day";
 import { Check } from "lucide-react";
+import { redirect } from "next/navigation";
+import { DayNav } from "./day-nav";
 import { addHabit, toggleCheckIn } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-export default function DayPage() {
+export default async function DayPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ day?: string }>;
+}) {
   const core = getCore();
   const today = core.today();
-  const habits = core.habitsForToday();
+  const { day = today } = await searchParams;
+  // Malformed or future Day: fall back to today.
+  if (!isValidDay(day) || day > today) redirect("/");
+  const habits = core.habitsOn(day);
 
   return (
     <main className="mx-auto flex max-w-md flex-col gap-6 p-6">
-      <h1 className="text-2xl font-semibold">
-        <time dateTime={today}>{today}</time>
-      </h1>
+      <DayNav day={day} today={today} />
 
       {habits.length === 0 ? (
         <p className="text-muted-foreground">No Habits yet. Add one below.</p>
@@ -23,7 +31,7 @@ export default function DayPage() {
         <ul className="flex flex-col gap-2">
           {habits.map((habit) => (
             <li key={habit.id}>
-              <form action={toggleCheckIn.bind(null, habit.id)}>
+              <form action={toggleCheckIn.bind(null, habit.id, day)}>
                 <button
                   type="submit"
                   aria-pressed={habit.checkedIn}

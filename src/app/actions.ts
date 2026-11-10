@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getCore } from "@/core";
+import type { Day } from "@/core/day";
 
 export async function addHabit(formData: FormData) {
   const name = String(formData.get("name") ?? "");
@@ -10,7 +11,7 @@ export async function addHabit(formData: FormData) {
   revalidatePath("/");
 }
 
-export async function toggleCheckIn(habitId: number) {
-  getCore().toggleCheckIn(habitId);
+export async function toggleCheckIn(habitId: number, day: Day) {
+  getCore().toggleCheckIn(habitId, day);
   revalidatePath("/");
 }

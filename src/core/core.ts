@@ -1,6 +1,6 @@
 import { and, asc, eq, getTableColumns, isNotNull } from "drizzle-orm";
 import type { Db } from "./db";
-import { dayOf, type Day } from "./day";
+import { dayOf, isValidDay, type Day } from "./day";
 import { checkIns, habits } from "./schema";
 
 export type CoreDeps = {
@@ -19,8 +19,27 @@ export type HabitOnDay = Habit & { checkedIn: boolean };
 export function createCore({ db, now, timeZone }: CoreDeps) {
   const today = (): Day => dayOf(now(), timeZone);
 
+  /** Throws unless `day` is a real calendar date no later than today. */
+  const assertViewable = (day: Day): void => {
+    if (!isValidDay(day)) throw new Error(`Invalid Day: ${day}`);
+    if (day > today()) throw new Error(`Day ${day} is in the future`);
+  };
+
+  /** Habits with their Check-in state on `day` (today or earlier). */
+  function habitsOn(day: Day): HabitOnDay[] {
+    assertViewable(day);
+    return db
+      .select({ ...getTableColumns(habits), checkedIn: isNotNull(checkIns.day) })
+      .from(habits)
+      .leftJoin(checkIns, and(eq(checkIns.habitId, habits.id), eq(checkIns.day, day)))
+      .orderBy(asc(habits.id))
+      .all()
+      .map((h) => ({ ...h, checkedIn: Boolean(h.checkedIn) }));
+  }
+
   return {
     today,
+    habitsOn,
     addHabit(rawName: string): Habit {
       const name = rawName.trim();
       if (!name) throw new Error("A Habit needs a name");
@@ -31,17 +50,11 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
         .get();
     },
     habitsForToday(): HabitOnDay[] {
-      return db
-        .select({ ...getTableColumns(habits), checkedIn: isNotNull(checkIns.day) })
-        .from(habits)
-        .leftJoin(checkIns, and(eq(checkIns.habitId, habits.id), eq(checkIns.day, today())))
-        .orderBy(asc(habits.id))
-        .all()
-        .map((h) => ({ ...h, checkedIn: Boolean(h.checkedIn) }));
+      return habitsOn(today());
     },
-    /** Ticks or unticks a Habit for today. Returns whether it is now checked in. */
-    toggleCheckIn(habitId: number): boolean {
-      const day = today();
+    /** Ticks or unticks a Habit on `day` (default today). Returns whether it is now checked in. */
+    toggleCheckIn(habitId: number, day: Day = today()): boolean {
+      assertViewable(day);
       return db.transaction((tx) => {
         const removed = tx
           .delete(checkIns)
