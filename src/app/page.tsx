@@ -35,8 +35,9 @@ export default async function DayPage({
               <form action={toggleCheckIn.bind(null, habit.id, day)} className="flex-1">
                 <button
                   type="submit"
+                  disabled={habit.readOnly}
                   aria-pressed={habit.checkedIn}
-                  className="flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left aria-pressed:bg-muted"
+                  className="flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left aria-pressed:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <span className="flex size-5 items-center justify-center rounded border">
                     {habit.checkedIn && <Check className="size-4" />}
@@ -46,13 +47,15 @@ export default async function DayPage({
                   </span>
                 </button>
               </form>
-              <Link
-                href={`/habits/${habit.id}?day=${day}`}
-                aria-label={`Edit ${habit.name}`}
-                className="p-2 text-muted-foreground"
-              >
-                <Pencil className="size-4" />
-              </Link>
+              {!habit.readOnly && (
+                <Link
+                  href={`/habits/${habit.id}?day=${day}`}
+                  aria-label={`Edit ${habit.name}`}
+                  className="p-2 text-muted-foreground"
+                >
+                  <Pencil className="size-4" />
+                </Link>
+              )}
             </li>
           ))}
         </ul>
@@ -62,6 +65,10 @@ export default async function DayPage({
         <Input name="name" placeholder="New Habit" aria-label="Habit name" required />
         <Button type="submit">Add</Button>
       </form>
+
+      <Link href="/archived" className="text-sm text-muted-foreground">
+        Archived Habits
+      </Link>
     </main>
   );
 }

@@ -5,7 +5,7 @@ import { isValidDay } from "@/core/day";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { renameHabit, setStartDay } from "../../actions";
+import { archiveHabit, renameHabit, setStartDay } from "../../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +59,16 @@ export default async function HabitPage({
           Check-in.
         </p>
       </form>
+      {habit.archiveDay === null && (
+        <form action={archiveHabit.bind(null, habit.id, backDay)}>
+          <Button type="submit" variant="outline">
+            Archive Habit
+          </Button>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Hides the Habit from today on. Earlier Days still show it, read-only.
+          </p>
+        </form>
+      )}
     </main>
   );
 }

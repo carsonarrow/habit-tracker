@@ -5,6 +5,8 @@ export const habits = sqliteTable("habits", {
   name: text("name").notNull(),
   // A Day, as an ISO date (YYYY-MM-DD) in the configured time zone.
   startDay: text("start_day").notNull(),
+  // The Day the Habit was archived: hidden on and after it, read-only before it. Null = active.
+  archiveDay: text("archive_day"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 

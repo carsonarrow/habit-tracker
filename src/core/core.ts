@@ -1,4 +1,4 @@
-import { and, asc, eq, getTableColumns, isNotNull, lte, min } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, gt, isNotNull, isNull, lte, min, or } from "drizzle-orm";
 import type { Db } from "./db";
 import { dayOf, isValidDay, type Day } from "./day";
 import { checkIns, habits } from "./schema";
@@ -13,8 +13,8 @@ export type CoreDeps = {
 
 export type Habit = typeof habits.$inferSelect;
 
-/** A Habit plus whether it has a Check-in today. */
-export type HabitOnDay = Habit & { checkedIn: boolean };
+/** A Habit plus its Check-in state on a Day; `readOnly` when it is archived (shown only before its archive Day). */
+export type HabitOnDay = Habit & { checkedIn: boolean; readOnly: boolean };
 
 export function createCore({ db, now, timeZone }: CoreDeps) {
   const today = (): Day => dayOf(now(), timeZone);
@@ -32,10 +32,16 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
       .select({ ...getTableColumns(habits), checkedIn: isNotNull(checkIns.day) })
       .from(habits)
       .leftJoin(checkIns, and(eq(checkIns.habitId, habits.id), eq(checkIns.day, day)))
-      .where(lte(habits.startDay, day))
+      .where(
+        and(lte(habits.startDay, day), or(isNull(habits.archiveDay), gt(habits.archiveDay, day))),
+      )
       .orderBy(asc(habits.id))
       .all()
-      .map((h) => ({ ...h, checkedIn: Boolean(h.checkedIn) }));
+      .map((h) => ({
+        ...h,
+        checkedIn: Boolean(h.checkedIn),
+        readOnly: h.archiveDay !== null,
+      }));
   }
 
   /** Trims a Habit name; throws if it is blank. */
@@ -86,6 +92,38 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
         return tx.update(habits).set({ startDay: day }).where(eq(habits.id, id)).returning().get();
       });
     },
+    /** Archives a Habit as of today; already-archived Habits keep their archive Day. */
+    archiveHabit(id: number): Habit {
+      const today_ = today();
+      const updated = db
+        .update(habits)
+        .set({ archiveDay: today_ })
+        .where(and(eq(habits.id, id), isNull(habits.archiveDay)))
+        .returning()
+        .get();
+      const habit = updated ?? this.getHabit(id);
+      if (!habit) throw new Error(`Habit ${id} not found`);
+      return habit;
+    },
+    /** Makes an Archived Habit active again, with no gap. */
+    restoreHabit(id: number): Habit {
+      const updated = db
+        .update(habits)
+        .set({ archiveDay: null })
+        .where(eq(habits.id, id))
+        .returning()
+        .get();
+      if (!updated) throw new Error(`Habit ${id} not found`);
+      return updated;
+    },
+    archivedHabits(): Habit[] {
+      return db
+        .select()
+        .from(habits)
+        .where(isNotNull(habits.archiveDay))
+        .orderBy(asc(habits.id))
+        .all();
+    },
     habitsForToday(): HabitOnDay[] {
       return habitsOn(today());
     },
@@ -95,6 +133,7 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
       return db.transaction((tx) => {
         const habit = tx.select().from(habits).where(eq(habits.id, habitId)).get();
         if (!habit) throw new Error(`Habit ${habitId} not found`);
+        if (habit.archiveDay !== null) throw new Error(`Habit ${habitId} is archived`);
         if (day < habit.startDay) {
           throw new Error(`Day ${day} is before the Habit's Start Day ${habit.startDay}`);
         }

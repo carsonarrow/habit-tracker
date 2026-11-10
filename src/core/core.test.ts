@@ -206,3 +206,67 @@ describe("Start Day", () => {
     expect(() => core.setStartDay(999, "2026-03-10")).toThrow(/not found/i);
   });
 });
+
+describe("Archiving a Habit", () => {
+  it("hides the Habit from today and later Days", () => {
+    const { core, setNow } = makeCore();
+    const habit = core.addHabit("Read");
+    core.archiveHabit(habit.id);
+    expect(core.habitsForToday()).toEqual([]);
+    setNow(new Date("2026-03-12T12:00:00Z"));
+    expect(core.habitsOn("2026-03-12")).toEqual([]);
+  });
+
+  it("shows read-only with its Check-in state on earlier Days", () => {
+    const { core, setNow } = makeCore();
+    const habit = core.addHabit("Read");
+    core.toggleCheckIn(habit.id);
+    setNow(new Date("2026-03-12T12:00:00Z"));
+    core.archiveHabit(habit.id);
+    expect(core.habitsOn("2026-03-10")).toMatchObject([
+      { name: "Read", checkedIn: true, readOnly: true },
+    ]);
+    expect(core.habitsOn("2026-03-11")).toMatchObject([{ checkedIn: false, readOnly: true }]);
+  });
+
+  it("marks active Habits as not read-only", () => {
+    const { core } = makeCore();
+    core.addHabit("Read");
+    expect(core.habitsForToday()[0].readOnly).toBe(false);
+  });
+
+  it("rejects toggling an Archived Habit on any Day", () => {
+    const { core, setNow } = makeCore();
+    const habit = core.addHabit("Read");
+    setNow(new Date("2026-03-12T12:00:00Z"));
+    core.archiveHabit(habit.id);
+    expect(() => core.toggleCheckIn(habit.id, "2026-03-10")).toThrow(/archived/i);
+    expect(() => core.toggleCheckIn(habit.id)).toThrow(/archived/i);
+  });
+
+  it("lists Archived Habits, and Restore makes them active again with no gap", () => {
+    const { core, setNow } = makeCore();
+    const habit = core.addHabit("Read");
+    core.addHabit("Walk");
+    core.toggleCheckIn(habit.id);
+    setNow(new Date("2026-03-12T12:00:00Z"));
+    core.archiveHabit(habit.id);
+    expect(core.archivedHabits().map((h) => h.name)).toEqual(["Read"]);
+
+    core.restoreHabit(habit.id);
+    expect(core.archivedHabits()).toEqual([]);
+    // Active on every Day since its Start Day, including the archived gap.
+    expect(core.habitsOn("2026-03-11")).toMatchObject([
+      { name: "Read", readOnly: false },
+      { name: "Walk" },
+    ]);
+    expect(core.habitsOn("2026-03-10")[0]).toMatchObject({ checkedIn: true });
+    expect(core.toggleCheckIn(habit.id)).toBe(true);
+  });
+
+  it("throws for an unknown Habit", () => {
+    const { core } = makeCore();
+    expect(() => core.archiveHabit(99)).toThrow(/not found/);
+    expect(() => core.restoreHabit(99)).toThrow(/not found/);
+  });
+});

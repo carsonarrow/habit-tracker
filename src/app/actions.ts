@@ -37,3 +37,16 @@ export async function setStartDay(habitId: number, day: Day, formData: FormData)
   revalidatePath("/");
   redirect(back ? `/?day=${back}` : "/");
 }
+
+export async function archiveHabit(habitId: number, day: Day) {
+  getCore().archiveHabit(habitId);
+  revalidatePath("/");
+  // The Habit is hidden from today on, so go back to the Day the user came from.
+  redirect(isValidDay(day) ? `/?day=${day}` : "/");
+}
+
+export async function restoreHabit(habitId: number) {
+  getCore().restoreHabit(habitId);
+  revalidatePath("/");
+  revalidatePath("/archived");
+}
