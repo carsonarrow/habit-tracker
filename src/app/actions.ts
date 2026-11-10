@@ -9,3 +9,8 @@ export async function addHabit(formData: FormData) {
   getCore().addHabit(name);
   revalidatePath("/");
 }
+
+export async function toggleCheckIn(habitId: number) {
+  getCore().toggleCheckIn(habitId);
+  revalidatePath("/");
+}

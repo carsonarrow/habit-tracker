@@ -4,7 +4,7 @@ import path from "node:path";
 import { createCore } from "./core";
 import { openDb } from "./db";
 
-export type { Habit } from "./core";
+export type { Habit, HabitOnDay } from "./core";
 
 type Core = ReturnType<typeof createCore>;
 

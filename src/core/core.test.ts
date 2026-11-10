@@ -48,3 +48,56 @@ describe("Habits", () => {
     expect(core.habitsForToday()).toHaveLength(1);
   });
 });
+
+describe("Check-ins", () => {
+  it("toggling a Habit ticks it off today", () => {
+    const { core } = makeCore();
+    const habit = core.addHabit("Read");
+    expect(core.toggleCheckIn(habit.id)).toBe(true);
+    expect(core.habitsForToday()).toMatchObject([{ name: "Read", checkedIn: true }]);
+  });
+
+  it("toggling again unticks it", () => {
+    const { core } = makeCore();
+    const habit = core.addHabit("Read");
+    core.toggleCheckIn(habit.id);
+    expect(core.toggleCheckIn(habit.id)).toBe(false);
+    expect(core.habitsForToday()).toMatchObject([{ checkedIn: false }]);
+  });
+
+  it("alternates on repeated toggles, never doubling a Check-in", () => {
+    const { core } = makeCore();
+    const read = core.addHabit("Read");
+    core.addHabit("Walk");
+    expect([1, 2, 3].map(() => core.toggleCheckIn(read.id))).toEqual([true, false, true]);
+    expect(core.habitsForToday().map((h) => [h.name, h.checkedIn])).toEqual([
+      ["Read", true],
+      ["Walk", false],
+    ]);
+  });
+
+  it("a Check-in belongs to today only", () => {
+    const { core, setNow } = makeCore({ now: new Date("2026-03-10T23:00:00Z") });
+    const habit = core.addHabit("Read");
+    core.toggleCheckIn(habit.id);
+    setNow(new Date("2026-03-11T01:00:00Z"));
+    expect(core.habitsForToday()).toMatchObject([{ checkedIn: false }]);
+    expect(core.toggleCheckIn(habit.id)).toBe(true);
+  });
+
+  it("persists across reopening the database", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "habits-"));
+    dirs.push(dir);
+    const file = path.join(dir, "test.db");
+    const now = () => new Date("2026-03-10T12:00:00Z");
+    const first = createCore({ db: openDb(file), now, timeZone: "UTC" });
+    first.toggleCheckIn(first.addHabit("Read").id);
+    const second = createCore({ db: openDb(file), now, timeZone: "UTC" });
+    expect(second.habitsForToday()).toMatchObject([{ name: "Read", checkedIn: true }]);
+  });
+
+  it("rejects a Check-in for an unknown Habit", () => {
+    const { core } = makeCore();
+    expect(() => core.toggleCheckIn(999)).toThrow();
+  });
+});
