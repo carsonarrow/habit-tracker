@@ -1,0 +1,14 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      # Defines where each Day starts and ends.
+      TZ: ${TZ:-Europe/London}
+    volumes:
+      - habit-data:/data
+    restart: unless-stopped
+
+volumes:
+  habit-data:

@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1794345461976,
+      "tag": "0000_fast_boom_boom",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1794346084678,
+      "tag": "0001_smart_gressill",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1794347196488,
+      "tag": "0002_thick_guardsmen",
+      "breakpoints": true
+    }
+  ]
+}
