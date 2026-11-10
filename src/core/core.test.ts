@@ -265,6 +265,14 @@ describe("Archiving a Habit", () => {
     expect(() => core.toggleCheckIn(habit.id)).toThrow(/archived/i);
   });
 
+  it("lists active Habits for management, excluding Archived ones", () => {
+    const { core } = makeCore();
+    const read = core.addHabit("Read");
+    core.addHabit("Walk");
+    core.archiveHabit(read.id);
+    expect(core.activeHabits()).toMatchObject([{ name: "Walk", startDay: "2026-03-10" }]);
+  });
+
   it("lists Archived Habits, and Restore makes them active again with no gap", () => {
     const { core, setNow } = makeCore();
     const habit = core.addHabit("Read");

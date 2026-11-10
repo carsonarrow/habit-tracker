@@ -1,12 +1,10 @@
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { getCore } from "@/core";
 import { isValidDay } from "@/core/day";
-import { Check, Pencil } from "lucide-react";
+import { Check, Settings } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { DayNav } from "./day-nav";
-import { addHabit, toggleCheckIn } from "./actions";
+import { toggleCheckIn } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -24,15 +22,28 @@ export default async function DayPage({
 
   return (
     <main className="mx-auto flex max-w-md flex-col gap-6 p-6">
-      <DayNav day={day} today={today} />
+      <div className="flex items-center gap-2">
+        <div className="flex-1">
+          <DayNav day={day} today={today} />
+        </div>
+        <Link href="/habits" aria-label="Manage Habits" className="p-2 text-muted-foreground">
+          <Settings className="size-5" />
+        </Link>
+      </div>
 
       {habits.length === 0 ? (
-        <p className="text-muted-foreground">No Habits yet. Add one below.</p>
+        <p className="text-muted-foreground">
+          No Habits yet.{" "}
+          <Link href="/habits" className="underline">
+            Add one
+          </Link>
+          .
+        </p>
       ) : (
         <ul className="flex flex-col gap-2">
           {habits.map((habit) => (
-            <li key={habit.id} className="flex items-center gap-2">
-              <form action={toggleCheckIn.bind(null, habit.id, day)} className="flex-1">
+            <li key={habit.id}>
+              <form action={toggleCheckIn.bind(null, habit.id, day)}>
                 <button
                   type="submit"
                   disabled={habit.readOnly}
@@ -47,28 +58,10 @@ export default async function DayPage({
                   </span>
                 </button>
               </form>
-              {!habit.readOnly && (
-                <Link
-                  href={`/habits/${habit.id}?day=${day}`}
-                  aria-label={`Edit ${habit.name}`}
-                  className="p-2 text-muted-foreground"
-                >
-                  <Pencil className="size-4" />
-                </Link>
-              )}
             </li>
           ))}
         </ul>
       )}
-
-      <form action={addHabit} className="flex gap-2">
-        <Input name="name" placeholder="New Habit" aria-label="Habit name" required />
-        <Button type="submit">Add</Button>
-      </form>
-
-      <Link href="/archived" className="text-sm text-muted-foreground">
-        Archived Habits
-      </Link>
     </main>
   );
 }
