@@ -1,25 +1,37 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getCore } from "@/core";
+import { weekdays, type Weekday } from "@/core/day";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { archiveHabit, renameHabit, setStartDay } from "../../actions";
+import { archiveHabit, renameHabit, setSchedule, setStartDay } from "../../actions";
 
 export const dynamic = "force-dynamic";
+
+const weekdayLabels: Record<Weekday, string> = {
+  mon: "Mon",
+  tue: "Tue",
+  wed: "Wed",
+  thu: "Thu",
+  fri: "Fri",
+  sat: "Sat",
+  sun: "Sun",
+};
 
 export default async function HabitPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; scheduleError?: string }>;
 }) {
   const { id } = await params;
-  const { error } = await searchParams;
+  const { error, scheduleError } = await searchParams;
   const core = getCore();
   const habit = /^\d+$/.test(id) ? core.getHabit(Number(id)) : undefined;
   if (!habit) notFound();
+  const schedule = core.scheduleOf(habit.id);
 
   return (
     <main className="mx-auto flex max-w-md flex-col gap-6 p-6">
@@ -54,6 +66,39 @@ export default async function HabitPage({
         <p className="text-sm text-muted-foreground">
           The Habit won&apos;t appear on Days before this. It can&apos;t move past an existing
           Check-in.
+        </p>
+      </form>
+      <form action={setSchedule.bind(null, habit.id)} className="flex flex-col gap-2">
+        <fieldset className="flex flex-col gap-2">
+          <legend className="mb-2 text-sm font-medium">Schedule</legend>
+          <div className="flex flex-wrap gap-2">
+            {weekdays.map((day) => (
+              <label
+                key={day}
+                className="flex items-center gap-1.5 rounded-md border px-2 py-1 text-sm has-checked:bg-muted"
+              >
+                <input
+                  type="checkbox"
+                  name="weekdays"
+                  value={day}
+                  defaultChecked={schedule.includes(day)}
+                />
+                {weekdayLabels[day]}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <Button type="submit" className="self-start">
+          Save
+        </Button>
+        {scheduleError && (
+          <p role="alert" className="text-sm text-destructive">
+            {scheduleError}
+          </p>
+        )}
+        <p className="text-sm text-muted-foreground">
+          The days of the week the Habit is due. A change applies from today; earlier Days keep the
+          Schedule they had.
         </p>
       </form>
       {habit.archiveDay === null && (

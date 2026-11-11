@@ -25,3 +25,20 @@ export const checkIns = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.habitId, t.day] })],
 );
+
+/**
+ * A version of a Habit's Schedule, effective from `effectiveDay`: at most one per (Habit, Day).
+ * The version for a Day is the latest effective on or before it, else the earliest.
+ */
+export const schedules = sqliteTable(
+  "schedules",
+  {
+    habitId: integer("habit_id")
+      .notNull()
+      .references(() => habits.id, { onDelete: "cascade" }),
+    effectiveDay: text("effective_day").notNull(),
+    // The weekdays the Habit is due on, comma-separated in Mon..Sun order, e.g. "mon,wed,fri".
+    weekdays: text("weekdays").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.habitId, t.effectiveDay] })],
+);

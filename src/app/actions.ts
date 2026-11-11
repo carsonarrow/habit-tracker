@@ -39,6 +39,18 @@ export async function setStartDay(habitId: number, formData: FormData) {
   redirect("/habits");
 }
 
+export async function setSchedule(habitId: number, formData: FormData) {
+  try {
+    getCore().setSchedule(habitId, formData.getAll("weekdays").map(String));
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Could not set Schedule";
+    redirect(`/habits/${habitId}?scheduleError=${encodeURIComponent(message)}`);
+  }
+  revalidatePath("/");
+  revalidatePath("/habits");
+  redirect("/habits");
+}
+
 export async function archiveHabit(habitId: number) {
   getCore().archiveHabit(habitId);
   revalidatePath("/");
