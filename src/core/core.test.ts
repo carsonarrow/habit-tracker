@@ -528,17 +528,44 @@ describe("Schedule", () => {
     expect(() => core.setState(habit.id, "done", "2026-03-03")).toThrow(/not due/i);
   });
 
-  it("rejects making the Habit not due today while it has a Check-in today", () => {
-    const { core } = makeCore();
-    const habit = core.addHabit("Read");
-    core.setState(habit.id, "notDone");
-    expect(() => core.setSchedule(habit.id, ["mon"])).toThrow(/check-in.*2026-03-10/i);
-    expect(core.scheduleOf(habit.id)).toEqual(everyDay);
-    expect(core.habitsForToday()).toMatchObject([{ state: "notDone" }]);
-    // Still allowed while it stays due today.
-    expect(core.setSchedule(habit.id, ["tue"])).toEqual(["tue"]);
-    core.setState(habit.id, "unrecorded");
-    expect(core.setSchedule(habit.id, ["mon"])).toEqual(["mon"]);
+  describe("protecting today's Check-in", () => {
+    // 2026-03-10 is a Tuesday.
+    it.each([
+      ["Done", "done"],
+      ["Not done", "notDone"],
+    ] as const)(
+      "rejects dropping today's weekday while today has a %s Check-in, leaving it unchanged",
+      (_label, state) => {
+        const { core } = makeCore();
+        const habit = core.addHabit("Read");
+        core.setState(habit.id, state);
+        expect(() => core.setSchedule(habit.id, ["mon", "wed"])).toThrow(/check-in today.*clear/i);
+        expect(core.scheduleOf(habit.id)).toEqual(everyDay);
+        expect(core.habitsForToday()).toMatchObject([{ name: "Read", state }]);
+      },
+    );
+
+    it("accepts the same change once today's Check-in is cleared", () => {
+      const { core } = makeCore();
+      const habit = core.addHabit("Read");
+      core.setState(habit.id, "done");
+      expect(() => core.setSchedule(habit.id, ["mon"])).toThrow(/check-in today/i);
+      core.setState(habit.id, "unrecorded");
+      expect(core.setSchedule(habit.id, ["mon"])).toEqual(["mon"]);
+      expect(core.habitsForToday()).toEqual([]);
+    });
+
+    it.each([
+      ["Done", "done"],
+      ["Not done", "notDone"],
+      ["Unrecorded", "unrecorded"],
+    ] as const)("accepts a change that keeps today due when today is %s", (_label, state) => {
+      const { core } = makeCore();
+      const habit = core.addHabit("Read");
+      core.setState(habit.id, state);
+      expect(core.setSchedule(habit.id, ["tue", "fri"])).toEqual(["tue", "fri"]);
+      expect(core.habitsForToday()).toMatchObject([{ name: "Read", state }]);
+    });
   });
 
   it("saving several times in one Day leaves only the last; saving the current one changes nothing", () => {

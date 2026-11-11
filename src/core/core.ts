@@ -154,7 +154,12 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
             .from(checkIns)
             .where(and(eq(checkIns.habitId, id), eq(checkIns.day, day)))
             .get();
-          if (checkIn) throw new Error(`Habit has a Check-in on ${day}, so it must stay due then`);
+          if (checkIn) {
+            throw new Error(
+              "Habit has a Check-in today, so its Schedule must keep today's weekday. " +
+                "Clear today's Check-in first to change that.",
+            );
+          }
         }
         // Replacing today's version would also rewrite Days before today when it is the
         // earliest (it covers a backdated Start Day), so keep it for those Days first.
