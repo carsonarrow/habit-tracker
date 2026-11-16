@@ -20,18 +20,39 @@ export type HabitState = (typeof habitStates)[number];
 /** A Habit plus its state on a Day; `readOnly` when it is archived (shown only before its archive Day). */
 export type HabitOnDay = Habit & { state: HabitState; readOnly: boolean };
 
-/** A Schedule: the weekdays a Habit is due on, in Mon..Sun order. */
-export type Schedule = Weekday[];
+/**
+ * A Schedule: when a Habit is due. A tagged variant so further kinds can join the weekdays one.
+ * - `weekdays`: due on these days of the week, non-empty, in Mon..Sun order.
+ */
+export type Schedule = { kind: "weekdays"; weekdays: Weekday[] };
 
-const parseSchedule = (stored: string): Schedule => stored.split(",") as Schedule;
-const formatSchedule = (schedule: Schedule): string => schedule.join(",");
+/** Schedule input from a client, checked by `cleanSchedule` before use. */
+export type ScheduleInput = { kind: "weekdays"; weekdays: readonly string[] };
 
-/** Checks client input is a non-empty set of weekdays; returns it in Mon..Sun order without duplicates. */
-function cleanSchedule(raw: readonly string[]): Schedule {
-  const invalid = raw.find((d) => !(weekdays as readonly string[]).includes(d));
+// Stored as the weekdays column: comma-separated in Mon..Sun order, e.g. "mon,wed,fri".
+const parseSchedule = (stored: string): Schedule => ({
+  kind: "weekdays",
+  weekdays: stored.split(",") as Weekday[],
+});
+const formatSchedule = (schedule: Schedule): string => schedule.weekdays.join(",");
+
+/** Whether a Habit with `schedule` is due on `day`. */
+function isDueUnder(schedule: Schedule, day: Day): boolean {
+  return schedule.weekdays.includes(weekdayOf(day));
+}
+
+/**
+ * Checks client input is a Schedule: for weekdays, a non-empty set of real weekdays.
+ * Returns it with weekdays in Mon..Sun order without duplicates.
+ */
+function cleanSchedule(raw: ScheduleInput): Schedule {
+  // Server actions pass client input straight through, so check its shape at runtime.
+  if (raw?.kind !== "weekdays") throw new Error(`Not a kind of Schedule: ${raw?.kind}`);
+  if (!Array.isArray(raw.weekdays)) throw new Error("A weekdays Schedule needs a list of weekdays");
+  const invalid = raw.weekdays.find((d) => !(weekdays as readonly string[]).includes(d));
   if (invalid !== undefined) throw new Error(`Not a weekday: ${invalid}`);
-  if (raw.length === 0) throw new Error("A Schedule needs at least one weekday");
-  return weekdays.filter((d) => raw.includes(d));
+  if (raw.weekdays.length === 0) throw new Error("A Schedule needs at least one weekday");
+  return { kind: "weekdays", weekdays: weekdays.filter((d) => raw.weekdays.includes(d)) };
 }
 
 /** One entry in a Habit's Schedule history, effective from `effectiveDay`. */
@@ -71,7 +92,7 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
   };
 
   const isDue = (versions: ScheduleVersion[], day: Day): boolean =>
-    scheduleOnDay(versions, day).includes(weekdayOf(day));
+    isDueUnder(scheduleOnDay(versions, day), day);
 
   /** Habits due on `day` (today or earlier), with their state there. */
   function habitsOn(day: Day): HabitOnDay[] {
@@ -123,7 +144,7 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
           .values({
             habitId: habit.id,
             effectiveDay: habit.startDay,
-            weekdays: formatSchedule([...weekdays]),
+            weekdays: formatSchedule({ kind: "weekdays", weekdays: [...weekdays] }),
           })
           .run();
         return habit;
@@ -140,7 +161,7 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
      * Rejected for an Archived Habit, and if it would make the Habit not due today while it
      * has a Check-in today.
      */
-    setSchedule(id: number, rawSchedule: readonly string[]): Schedule {
+    setSchedule(id: number, rawSchedule: ScheduleInput): Schedule {
       const schedule = cleanSchedule(rawSchedule);
       const day = today();
       db.transaction((tx) => {
@@ -152,7 +173,7 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
         const versions = versionsOf(tx, id);
         const current = scheduleOnDay(versions, day);
         if (formatSchedule(current) === formatSchedule(schedule)) return;
-        if (!schedule.includes(weekdayOf(day))) {
+        if (!isDueUnder(schedule, day)) {
           const checkIn = tx
             .select()
             .from(checkIns)

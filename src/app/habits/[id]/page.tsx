@@ -84,7 +84,7 @@ export default async function HabitPage({
                     type="checkbox"
                     name="weekdays"
                     value={day}
-                    defaultChecked={schedule.includes(day)}
+                    defaultChecked={schedule.weekdays.includes(day)}
                   />
                   {weekdayLabels[day]}
                 </label>

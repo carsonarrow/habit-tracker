@@ -41,7 +41,10 @@ export async function setStartDay(habitId: number, formData: FormData) {
 
 export async function setSchedule(habitId: number, formData: FormData) {
   try {
-    getCore().setSchedule(habitId, formData.getAll("weekdays").map(String));
+    getCore().setSchedule(habitId, {
+      kind: "weekdays",
+      weekdays: formData.getAll("weekdays").map(String),
+    });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Could not set Schedule";
     redirect(`/habits/${habitId}?scheduleError=${encodeURIComponent(message)}`);

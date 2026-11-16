@@ -403,7 +403,9 @@ describe("Deleting a Habit", () => {
 });
 
 // 2026-03-10, the default "now", is a Tuesday.
-const everyDay = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+/** A weekdays Schedule, as the core takes and returns it. */
+const onWeekdays = (...weekdays: string[]) => ({ kind: "weekdays" as const, weekdays });
+const everyDay = onWeekdays("mon", "tue", "wed", "thu", "fri", "sat", "sun");
 
 describe("Schedule", () => {
   it("a new Habit is due every day of the week", () => {
@@ -416,8 +418,8 @@ describe("Schedule", () => {
     const { core } = makeCore();
     const read = core.addHabit("Read");
     core.addHabit("Walk");
-    expect(core.setSchedule(read.id, ["mon", "wed"])).toEqual(["mon", "wed"]);
-    expect(core.scheduleOf(read.id)).toEqual(["mon", "wed"]);
+    expect(core.setSchedule(read.id, onWeekdays("mon", "wed"))).toEqual(onWeekdays("mon", "wed"));
+    expect(core.scheduleOf(read.id)).toEqual(onWeekdays("mon", "wed"));
     expect(core.habitsForToday().map((h) => h.name)).toEqual(["Walk"]);
     expect(() => core.setState(read.id, "done")).toThrow(/not due/i);
     expect(() => core.setState(read.id, "notDone")).toThrow(/not due/i);
@@ -427,9 +429,9 @@ describe("Schedule", () => {
   it("applies from today: a Habit made due today appears on today's Check-in straight away", () => {
     const { core } = makeCore();
     const habit = core.addHabit("Read");
-    core.setSchedule(habit.id, ["mon"]);
+    core.setSchedule(habit.id, onWeekdays("mon"));
     expect(core.habitsForToday()).toEqual([]);
-    core.setSchedule(habit.id, ["tue", "thu"]);
+    core.setSchedule(habit.id, onWeekdays("tue", "thu"));
     expect(core.habitsForToday()).toMatchObject([{ name: "Read", state: "unrecorded" }]);
     core.setState(habit.id, "done");
     expect(core.habitsForToday()).toMatchObject([{ state: "done" }]);
@@ -438,22 +440,26 @@ describe("Schedule", () => {
   it("rejects an empty or invalid set of weekdays, leaving the Schedule unchanged", () => {
     const { core } = makeCore();
     const habit = core.addHabit("Read");
-    core.setSchedule(habit.id, ["tue", "fri"]);
-    expect(() => core.setSchedule(habit.id, [])).toThrow(/at least one/i);
-    expect(() => core.setSchedule(habit.id, ["tue", "funday"])).toThrow(/weekday.*funday/i);
-    expect(core.scheduleOf(habit.id)).toEqual(["tue", "fri"]);
+    core.setSchedule(habit.id, onWeekdays("tue", "fri"));
+    expect(() => core.setSchedule(habit.id, onWeekdays())).toThrow(/at least one/i);
+    expect(() => core.setSchedule(habit.id, onWeekdays("tue", "funday"))).toThrow(
+      /weekday.*funday/i,
+    );
+    expect(core.scheduleOf(habit.id)).toEqual(onWeekdays("tue", "fri"));
   });
 
   it("stores weekdays in Mon..Sun order without duplicates", () => {
     const { core } = makeCore();
     const habit = core.addHabit("Read");
-    expect(core.setSchedule(habit.id, ["sun", "mon", "sun", "wed"])).toEqual(["mon", "wed", "sun"]);
-    expect(core.scheduleOf(habit.id)).toEqual(["mon", "wed", "sun"]);
+    expect(core.setSchedule(habit.id, onWeekdays("sun", "mon", "sun", "wed"))).toEqual(
+      onWeekdays("mon", "wed", "sun"),
+    );
+    expect(core.scheduleOf(habit.id)).toEqual(onWeekdays("mon", "wed", "sun"));
   });
 
   it("throws for an unknown Habit", () => {
     const { core } = makeCore();
-    expect(() => core.setSchedule(999, ["mon"])).toThrow(/not found/i);
+    expect(() => core.setSchedule(999, onWeekdays("mon"))).toThrow(/not found/i);
     expect(() => core.scheduleOf(999)).toThrow(/not found/i);
   });
 
@@ -463,7 +469,7 @@ describe("Schedule", () => {
     core.setState(habit.id, "done");
     setNow(new Date("2026-03-10T12:00:00Z")); // Tuesday
     core.setState(habit.id, "notDone", "2026-03-09");
-    core.setSchedule(habit.id, ["wed"]);
+    core.setSchedule(habit.id, onWeekdays("wed"));
 
     expect(core.habitsOn("2026-03-08")).toMatchObject([{ state: "done" }]);
     expect(core.habitsOn("2026-03-09")).toMatchObject([{ state: "notDone" }]);
@@ -472,7 +478,7 @@ describe("Schedule", () => {
     expect(core.habitsOn("2026-03-09")).toMatchObject([{ state: "unrecorded" }]);
 
     setNow(new Date("2026-03-12T12:00:00Z")); // Thursday
-    core.setSchedule(habit.id, ["thu"]);
+    core.setSchedule(habit.id, onWeekdays("thu"));
     expect(core.habitsOn("2026-03-11")).toMatchObject([{ state: "unrecorded" }]);
     expect(core.habitsOn("2026-03-12")).toMatchObject([{ state: "unrecorded" }]);
     expect(core.habitsOn("2026-03-10")).toEqual([]);
@@ -483,7 +489,7 @@ describe("Schedule", () => {
     const { core, setNow } = makeCore({ now: new Date("2026-03-09T12:00:00Z") }); // Monday
     const habit = core.addHabit("Read");
     setNow(new Date("2026-03-10T12:00:00Z"));
-    core.setSchedule(habit.id, ["tue"]);
+    core.setSchedule(habit.id, onWeekdays("tue"));
     core.setStartDay(habit.id, "2026-03-02"); // the Monday before
     // Before the change, the every-day Schedule applies, back to the new Start Day.
     for (const day of ["2026-03-02", "2026-03-05", "2026-03-08", "2026-03-09"]) {
@@ -496,7 +502,7 @@ describe("Schedule", () => {
   it("uses the earliest Schedule for backdated Days when it was set after the Habit was added", () => {
     const { core } = makeCore();
     const habit = core.addHabit("Read");
-    core.setSchedule(habit.id, ["sat"]); // replaces today's (only) version
+    core.setSchedule(habit.id, onWeekdays("sat")); // replaces today's (only) version
     core.setStartDay(habit.id, "2026-03-01"); // Sunday
     expect(core.habitsOn("2026-03-01")).toEqual([]);
     expect(core.habitsOn("2026-03-07")).toMatchObject([{ name: "Read" }]);
@@ -507,8 +513,8 @@ describe("Schedule", () => {
     const habit = core.addHabit("Read");
     core.setStartDay(habit.id, "2026-03-05"); // Thursday
     core.setState(habit.id, "done", "2026-03-06"); // Friday
-    core.setSchedule(habit.id, ["sat"]);
-    core.setSchedule(habit.id, ["tue", "sat"]);
+    core.setSchedule(habit.id, onWeekdays("sat"));
+    core.setSchedule(habit.id, onWeekdays("tue", "sat"));
     expect(core.habitsOn("2026-03-05")).toMatchObject([{ state: "unrecorded" }]);
     expect(core.habitsOn("2026-03-06")).toMatchObject([{ state: "done" }]);
     expect(core.habitsOn("2026-03-09")).toMatchObject([{ state: "unrecorded" }]);
@@ -519,7 +525,7 @@ describe("Schedule", () => {
   it("keeps a Start Day on a weekday the Habit isn't due; it first appears on its first Day due", () => {
     const { core, setNow } = makeCore({ now: new Date("2026-03-03T12:00:00Z") }); // Tuesday
     const habit = core.addHabit("Read");
-    core.setSchedule(habit.id, ["thu"]);
+    core.setSchedule(habit.id, onWeekdays("thu"));
     expect(core.getHabit(habit.id)?.startDay).toBe("2026-03-03");
     setNow(new Date("2026-03-10T12:00:00Z"));
     expect(core.habitsOn("2026-03-03")).toEqual([]);
@@ -539,7 +545,9 @@ describe("Schedule", () => {
         const { core } = makeCore();
         const habit = core.addHabit("Read");
         core.setState(habit.id, state);
-        expect(() => core.setSchedule(habit.id, ["mon", "wed"])).toThrow(/check-in today.*clear/i);
+        expect(() => core.setSchedule(habit.id, onWeekdays("mon", "wed"))).toThrow(
+          /check-in today.*clear/i,
+        );
         expect(core.scheduleOf(habit.id)).toEqual(everyDay);
         expect(core.habitsForToday()).toMatchObject([{ name: "Read", state }]);
       },
@@ -549,9 +557,9 @@ describe("Schedule", () => {
       const { core } = makeCore();
       const habit = core.addHabit("Read");
       core.setState(habit.id, "done");
-      expect(() => core.setSchedule(habit.id, ["mon"])).toThrow(/check-in today/i);
+      expect(() => core.setSchedule(habit.id, onWeekdays("mon"))).toThrow(/check-in today/i);
       core.setState(habit.id, "unrecorded");
-      expect(core.setSchedule(habit.id, ["mon"])).toEqual(["mon"]);
+      expect(core.setSchedule(habit.id, onWeekdays("mon"))).toEqual(onWeekdays("mon"));
       expect(core.habitsForToday()).toEqual([]);
     });
 
@@ -563,7 +571,9 @@ describe("Schedule", () => {
       const { core } = makeCore();
       const habit = core.addHabit("Read");
       core.setState(habit.id, state);
-      expect(core.setSchedule(habit.id, ["tue", "fri"])).toEqual(["tue", "fri"]);
+      expect(core.setSchedule(habit.id, onWeekdays("tue", "fri"))).toEqual(
+        onWeekdays("tue", "fri"),
+      );
       expect(core.habitsForToday()).toMatchObject([{ name: "Read", state }]);
     });
   });
@@ -572,11 +582,11 @@ describe("Schedule", () => {
     const { core, setNow } = makeCore({ now: new Date("2026-03-09T12:00:00Z") });
     const habit = core.addHabit("Read");
     setNow(new Date("2026-03-10T12:00:00Z"));
-    core.setSchedule(habit.id, ["mon"]);
-    core.setSchedule(habit.id, ["wed"]);
-    core.setSchedule(habit.id, ["tue", "wed"]);
-    expect(core.scheduleOf(habit.id)).toEqual(["tue", "wed"]);
-    expect(core.setSchedule(habit.id, ["wed", "tue"])).toEqual(["tue", "wed"]);
+    core.setSchedule(habit.id, onWeekdays("mon"));
+    core.setSchedule(habit.id, onWeekdays("wed"));
+    core.setSchedule(habit.id, onWeekdays("tue", "wed"));
+    expect(core.scheduleOf(habit.id)).toEqual(onWeekdays("tue", "wed"));
+    expect(core.setSchedule(habit.id, onWeekdays("wed", "tue"))).toEqual(onWeekdays("tue", "wed"));
     expect(core.habitsOn("2026-03-09")).toMatchObject([{ name: "Read" }]);
     expect(core.habitsOn("2026-03-10")).toMatchObject([{ name: "Read" }]);
     setNow(new Date("2026-03-12T12:00:00Z"));
@@ -590,7 +600,7 @@ describe("Schedule", () => {
       timeZone: "America/New_York",
     });
     const habit = core.addHabit("Read");
-    core.setSchedule(habit.id, ["mon"]);
+    core.setSchedule(habit.id, onWeekdays("mon"));
     expect(core.habitsForToday()).toMatchObject([{ name: "Read" }]);
     core.setState(habit.id, "done");
     setNow(new Date("2026-03-10T04:00:00Z")); // midnight in New York: Tuesday
@@ -602,13 +612,13 @@ describe("Schedule", () => {
     const { core, setNow } = makeCore();
     const read = core.addHabit("Read");
     const walk = core.addHabit("Walk");
-    core.setSchedule(read.id, ["mon"]);
-    core.setSchedule(walk.id, ["tue"]);
+    core.setSchedule(read.id, onWeekdays("mon"));
+    core.setSchedule(walk.id, onWeekdays("tue"));
     setNow(new Date("2026-03-11T12:00:00Z"));
-    core.setSchedule(read.id, ["wed"]);
+    core.setSchedule(read.id, onWeekdays("wed"));
     core.deleteHabit(read.id);
     expect(() => core.scheduleOf(read.id)).toThrow(/not found/i);
-    expect(core.scheduleOf(walk.id)).toEqual(["tue"]);
+    expect(core.scheduleOf(walk.id)).toEqual(onWeekdays("tue"));
     expect(core.habitsOn("2026-03-10").map((h) => h.name)).toEqual(["Walk"]);
   });
 
@@ -650,10 +660,10 @@ describe("Schedules for Archived Habits", () => {
   it("rejects changing an Archived Habit's Schedule, leaving it unchanged", () => {
     const { core } = makeCore();
     const habit = core.addHabit("Read");
-    core.setSchedule(habit.id, ["tue", "fri"]);
+    core.setSchedule(habit.id, onWeekdays("tue", "fri"));
     core.archiveHabit(habit.id);
-    expect(() => core.setSchedule(habit.id, ["mon"])).toThrow(/archived/i);
-    expect(core.scheduleOf(habit.id)).toEqual(["tue", "fri"]);
+    expect(() => core.setSchedule(habit.id, onWeekdays("mon"))).toThrow(/archived/i);
+    expect(core.scheduleOf(habit.id)).toEqual(onWeekdays("tue", "fri"));
   });
 
   it("shows read-only on past Days only where it was due under the Schedule in effect then", () => {
@@ -661,7 +671,7 @@ describe("Schedules for Archived Habits", () => {
     const habit = core.addHabit("Read");
     core.setState(habit.id, "done");
     setNow(new Date("2026-03-10T12:00:00Z")); // Tuesday
-    core.setSchedule(habit.id, ["wed"]);
+    core.setSchedule(habit.id, onWeekdays("wed"));
     setNow(new Date("2026-03-11T12:00:00Z")); // Wednesday
     core.setState(habit.id, "notDone");
     setNow(new Date("2026-03-13T12:00:00Z")); // Friday
@@ -683,13 +693,13 @@ describe("Schedules for Archived Habits", () => {
     const { core, setNow } = makeCore({ now: new Date("2026-03-09T12:00:00Z") }); // Monday
     const habit = core.addHabit("Read");
     setNow(new Date("2026-03-10T12:00:00Z")); // Tuesday
-    core.setSchedule(habit.id, ["tue", "thu"]);
+    core.setSchedule(habit.id, onWeekdays("tue", "thu"));
     setNow(new Date("2026-03-11T12:00:00Z")); // Wednesday
     core.archiveHabit(habit.id);
     setNow(new Date("2026-03-16T12:00:00Z")); // Monday
     core.restoreHabit(habit.id);
 
-    expect(core.scheduleOf(habit.id)).toEqual(["tue", "thu"]);
+    expect(core.scheduleOf(habit.id)).toEqual(onWeekdays("tue", "thu"));
     expect(core.habitsForToday()).toEqual([]);
     expect(() => core.setState(habit.id, "done")).toThrow(/not due/i);
     setNow(new Date("2026-03-17T12:00:00Z")); // Tuesday
@@ -699,6 +709,6 @@ describe("Schedules for Archived Habits", () => {
     core.setState(habit.id, "done");
     expect(core.habitsForToday()).toMatchObject([{ state: "done" }]);
     // Active again, so its Schedule can change.
-    expect(core.setSchedule(habit.id, ["tue", "sat"])).toEqual(["tue", "sat"]);
+    expect(core.setSchedule(habit.id, onWeekdays("tue", "sat"))).toEqual(onWeekdays("tue", "sat"));
   });
 });
