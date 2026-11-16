@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { DayPickerField } from "@/components/day-picker-field";
 import { Input } from "@/components/ui/input";
 import { getCore } from "@/core";
 import { ArrowLeft } from "lucide-react";
@@ -35,17 +36,16 @@ export default async function HabitPage({
         <Button type="submit">Save</Button>
       </form>
       <form action={setStartDay.bind(null, habit.id)} className="flex flex-col gap-2">
-        <label htmlFor="startDay" className="text-sm font-medium">
+        <label id="startDayLabel" htmlFor="startDay" className="text-sm font-medium">
           Start Day
         </label>
         <div className="flex gap-2">
-          <Input
+          <DayPickerField
             id="startDay"
+            labelId="startDayLabel"
             name="startDay"
-            type="date"
             defaultValue={habit.startDay}
-            max={core.today()}
-            required
+            today={core.today()}
           />
           <Button type="submit">Save</Button>
         </div>

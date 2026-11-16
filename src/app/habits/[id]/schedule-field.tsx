@@ -1,6 +1,7 @@
 "use client";
 
 import type { Schedule } from "@/core";
+import { Checkbox } from "@/components/ui/checkbox";
 import { weekdays, type Weekday } from "@/core/day";
 import { useState } from "react";
 
@@ -27,32 +28,30 @@ export function ScheduleField({ schedule }: { schedule: Schedule }) {
   return (
     <fieldset className="flex flex-col gap-2">
       <legend className="mb-2 text-sm font-medium">Schedule</legend>
-      <div className="flex flex-wrap gap-2">
+      <div className="grid grid-cols-7 gap-1.5">
         {weekdays.map((day) => (
           <label
             key={day}
-            className="flex items-center gap-1.5 rounded-md border px-2 py-1 text-sm has-checked:bg-muted has-disabled:opacity-50"
+            className="flex cursor-pointer flex-col items-center gap-1.5 rounded-md border py-2 text-sm has-disabled:cursor-not-allowed has-disabled:opacity-50 has-data-[state=checked]:bg-muted"
           >
-            <input
-              type="checkbox"
+            <Checkbox
               name="weekdays"
               value={day}
               disabled={noFixedDays}
               checked={!noFixedDays && selected.includes(day)}
-              onChange={(e) =>
-                setSelected((s) => (e.target.checked ? [...s, day] : s.filter((d) => d !== day)))
+              onCheckedChange={(checked) =>
+                setSelected((s) => (checked === true ? [...s, day] : s.filter((d) => d !== day)))
               }
             />
             {weekdayLabels[day]}
           </label>
         ))}
       </div>
-      <label className="flex items-center gap-1.5 self-start rounded-md border px-2 py-1 text-sm has-checked:bg-muted">
-        <input
-          type="checkbox"
+      <label className="flex cursor-pointer items-center gap-1.5 self-start rounded-md border px-2 py-2 text-sm has-data-[state=checked]:bg-muted">
+        <Checkbox
           name="noFixedDays"
           checked={noFixedDays}
-          onChange={(e) => setNoFixedDays(e.target.checked)}
+          onCheckedChange={(checked) => setNoFixedDays(checked === true)}
         />
         No fixed days (when it comes up)
       </label>
