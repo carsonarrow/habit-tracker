@@ -17,21 +17,53 @@ export type Habit = typeof habits.$inferSelect;
 const habitStates = ["done", "notDone", "unrecorded"] as const;
 export type HabitState = (typeof habitStates)[number];
 
-/** A Habit plus its state on a Day; `readOnly` when it is archived (shown only before its archive Day). */
-export type HabitOnDay = Habit & { state: HabitState; readOnly: boolean };
+/**
+ * A Habit plus its state on a Day; `readOnly` when it is archived (shown only before its archive
+ * Day, and on an opportunistic Day only with a Check-in); `opportunistic` when its Schedule that
+ * Day is no fixed days, so it is not due there.
+ */
+export type HabitOnDay = Habit & { state: HabitState; readOnly: boolean; opportunistic: boolean };
 
-/** A Schedule: the weekdays a Habit is due on, in Mon..Sun order. */
-export type Schedule = Weekday[];
+/**
+ * A Schedule: when a Habit is due (ADR 0002).
+ * - `weekdays`: due on these days of the week, non-empty, in Mon..Sun order.
+ * - `noFixedDays`: never due, but recordable on any Day: an Opportunistic Habit.
+ */
+export type Schedule = { kind: "weekdays"; weekdays: Weekday[] } | { kind: "noFixedDays" };
 
-const parseSchedule = (stored: string): Schedule => stored.split(",") as Schedule;
-const formatSchedule = (schedule: Schedule): string => schedule.join(",");
+/** Schedule input from a client, checked by `cleanSchedule` before use. */
+export type ScheduleInput =
+  { kind: "weekdays"; weekdays: readonly string[] } | { kind: "noFixedDays" };
 
-/** Checks client input is a non-empty set of weekdays; returns it in Mon..Sun order without duplicates. */
-function cleanSchedule(raw: readonly string[]): Schedule {
-  const invalid = raw.find((d) => !(weekdays as readonly string[]).includes(d));
+// Stored as the weekdays column: comma-separated in Mon..Sun order, e.g. "mon,wed,fri",
+// or empty for no fixed days (a weekdays Schedule is never empty).
+const parseSchedule = (stored: string): Schedule =>
+  stored === ""
+    ? { kind: "noFixedDays" }
+    : { kind: "weekdays", weekdays: stored.split(",") as Weekday[] };
+const formatSchedule = (schedule: Schedule): string =>
+  schedule.kind === "weekdays" ? schedule.weekdays.join(",") : "";
+
+/** Whether a Habit with `schedule` can be recorded on `day`: any Day for no fixed days, else when due. */
+function canRecordUnder(schedule: Schedule, day: Day): boolean {
+  return schedule.kind === "noFixedDays" || schedule.weekdays.includes(weekdayOf(day));
+}
+
+/**
+ * Checks client input is a Schedule: no fixed days, or a non-empty set of real weekdays.
+ * Returns it with weekdays in Mon..Sun order without duplicates.
+ */
+function cleanSchedule(raw: ScheduleInput): Schedule {
+  // Server actions pass client input straight through, so check its shape at runtime.
+  if (raw?.kind === "noFixedDays") return { kind: "noFixedDays" };
+  if (raw?.kind !== "weekdays") {
+    throw new Error(`Not a kind of Schedule: ${(raw as { kind?: unknown })?.kind}`);
+  }
+  if (!Array.isArray(raw.weekdays)) throw new Error("A weekdays Schedule needs a list of weekdays");
+  const invalid = raw.weekdays.find((d) => !(weekdays as readonly string[]).includes(d));
   if (invalid !== undefined) throw new Error(`Not a weekday: ${invalid}`);
-  if (raw.length === 0) throw new Error("A Schedule needs at least one weekday");
-  return weekdays.filter((d) => raw.includes(d));
+  if (raw.weekdays.length === 0) throw new Error("A Schedule needs at least one weekday");
+  return { kind: "weekdays", weekdays: weekdays.filter((d) => raw.weekdays.includes(d)) };
 }
 
 /** One entry in a Habit's Schedule history, effective from `effectiveDay`. */
@@ -70,10 +102,7 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
     if (day > today()) throw new Error(`Day ${day} is in the future`);
   };
 
-  const isDue = (versions: ScheduleVersion[], day: Day): boolean =>
-    scheduleOnDay(versions, day).includes(weekdayOf(day));
-
-  /** Habits due on `day` (today or earlier), with their state there. */
+  /** Habits that can be recorded on `day` (today or earlier), with their state there. */
   function habitsOn(day: Day): HabitOnDay[] {
     assertViewable(day);
     const versionsByHabit = new Map(
@@ -93,11 +122,23 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
       )
       .orderBy(asc(habits.id))
       .all()
-      .filter((h) => isDue(versionsByHabit.get(h.id) ?? [], day))
       .map(({ outcome, ...h }) => ({
-        ...h,
+        habit: h,
+        outcome,
+        schedule: scheduleOnDay(versionsByHabit.get(h.id) ?? [], day),
+      }))
+      .filter(({ habit, outcome, schedule }) =>
+        // An Archived Habit shows on a Day it was due, but on an opportunistic Day only with a
+        // Check-in: an empty one tells the user nothing (ADR 0002).
+        habit.archiveDay !== null && schedule.kind === "noFixedDays"
+          ? outcome !== null
+          : canRecordUnder(schedule, day),
+      )
+      .map(({ habit, outcome, schedule }) => ({
+        ...habit,
         state: outcome ?? "unrecorded",
-        readOnly: h.archiveDay !== null,
+        readOnly: habit.archiveDay !== null,
+        opportunistic: schedule.kind === "noFixedDays",
       }));
   }
 
@@ -123,7 +164,7 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
           .values({
             habitId: habit.id,
             effectiveDay: habit.startDay,
-            weekdays: formatSchedule([...weekdays]),
+            weekdays: formatSchedule({ kind: "weekdays", weekdays: [...weekdays] }),
           })
           .run();
         return habit;
@@ -137,10 +178,10 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
     /**
      * Sets a Habit's Schedule from today on; Days before today keep theirs (ADR 0001).
      * Saving again the same Day replaces today's version; saving the current Schedule is a no-op.
-     * Rejected for an Archived Habit, and if it would make the Habit not due today while it
-     * has a Check-in today.
+     * Rejected for an Archived Habit, and if the Habit could no longer be recorded today
+     * while it has a Check-in today.
      */
-    setSchedule(id: number, rawSchedule: readonly string[]): Schedule {
+    setSchedule(id: number, rawSchedule: ScheduleInput): Schedule {
       const schedule = cleanSchedule(rawSchedule);
       const day = today();
       db.transaction((tx) => {
@@ -152,7 +193,7 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
         const versions = versionsOf(tx, id);
         const current = scheduleOnDay(versions, day);
         if (formatSchedule(current) === formatSchedule(schedule)) return;
-        if (!schedule.includes(weekdayOf(day))) {
+        if (!canRecordUnder(schedule, day)) {
           const checkIn = tx
             .select()
             .from(checkIns)
@@ -279,7 +320,7 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
         if (day < habit.startDay) {
           throw new Error(`Day ${day} is before the Habit's Start Day ${habit.startDay}`);
         }
-        if (!isDue(versionsOf(tx, habitId), day)) {
+        if (!canRecordUnder(scheduleOnDay(versionsOf(tx, habitId), day), day)) {
           throw new Error(`Habit ${habitId} is not due on ${day}`);
         }
         if (state === "unrecorded") {
