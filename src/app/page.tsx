@@ -5,7 +5,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { DayNav } from "./day-nav";
 import { setState } from "./actions";
-import { summarizeWhenItComesUp } from "./when-it-comes-up";
 import { WhenItComesUpSection } from "./when-it-comes-up-section";
 import { cn } from "@/lib/utils";
 
@@ -48,7 +47,7 @@ export default async function DayPage({
         <>
           {due.length > 0 && <HabitList habits={due} day={day} />}
           {opportunistic.length > 0 && (
-            <WhenItComesUpSection key={day} summary={summarizeWhenItComesUp(opportunistic)}>
+            <WhenItComesUpSection key={day} habits={opportunistic}>
               <HabitList habits={opportunistic} day={day} />
             </WhenItComesUpSection>
           )}
