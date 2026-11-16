@@ -137,7 +137,8 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
     /**
      * Sets a Habit's Schedule from today on; Days before today keep theirs (ADR 0001).
      * Saving again the same Day replaces today's version; saving the current Schedule is a no-op.
-     * Rejected if it would make the Habit not due today while it has a Check-in today.
+     * Rejected for an Archived Habit, and if it would make the Habit not due today while it
+     * has a Check-in today.
      */
     setSchedule(id: number, rawSchedule: readonly string[]): Schedule {
       const schedule = cleanSchedule(rawSchedule);
@@ -145,6 +146,9 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
       db.transaction((tx) => {
         const habit = tx.select().from(habits).where(eq(habits.id, id)).get();
         if (!habit) throw new Error(`Habit ${id} not found`);
+        if (habit.archiveDay !== null) {
+          throw new Error(`Habit ${id} is archived; restore it to change its Schedule`);
+        }
         const versions = versionsOf(tx, id);
         const current = scheduleOnDay(versions, day);
         if (formatSchedule(current) === formatSchedule(schedule)) return;

@@ -31,6 +31,7 @@ export default async function HabitPage({
   const core = getCore();
   const habit = /^\d+$/.test(id) ? core.getHabit(Number(id)) : undefined;
   if (!habit) notFound();
+  const archived = habit.archiveDay !== null;
   const schedule = core.scheduleOf(habit.id);
 
   return (
@@ -68,40 +69,43 @@ export default async function HabitPage({
           Check-in.
         </p>
       </form>
-      <form action={setSchedule.bind(null, habit.id)} className="flex flex-col gap-2">
-        <fieldset className="flex flex-col gap-2">
-          <legend className="mb-2 text-sm font-medium">Schedule</legend>
-          <div className="flex flex-wrap gap-2">
-            {weekdays.map((day) => (
-              <label
-                key={day}
-                className="flex items-center gap-1.5 rounded-md border px-2 py-1 text-sm has-checked:bg-muted"
-              >
-                <input
-                  type="checkbox"
-                  name="weekdays"
-                  value={day}
-                  defaultChecked={schedule.includes(day)}
-                />
-                {weekdayLabels[day]}
-              </label>
-            ))}
-          </div>
-        </fieldset>
-        <Button type="submit" className="self-start">
-          Save
-        </Button>
-        {scheduleError && (
-          <p role="alert" className="text-sm text-destructive">
-            {scheduleError}
+      {/* An Archived Habit's Schedule can't change, so its section is hidden. */}
+      {!archived && (
+        <form action={setSchedule.bind(null, habit.id)} className="flex flex-col gap-2">
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-2 text-sm font-medium">Schedule</legend>
+            <div className="flex flex-wrap gap-2">
+              {weekdays.map((day) => (
+                <label
+                  key={day}
+                  className="flex items-center gap-1.5 rounded-md border px-2 py-1 text-sm has-checked:bg-muted"
+                >
+                  <input
+                    type="checkbox"
+                    name="weekdays"
+                    value={day}
+                    defaultChecked={schedule.includes(day)}
+                  />
+                  {weekdayLabels[day]}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <Button type="submit" className="self-start">
+            Save
+          </Button>
+          {scheduleError && (
+            <p role="alert" className="text-sm text-destructive">
+              {scheduleError}
+            </p>
+          )}
+          <p className="text-sm text-muted-foreground">
+            The days of the week the Habit is due. A change applies from today; earlier Days keep
+            the Schedule they had.
           </p>
-        )}
-        <p className="text-sm text-muted-foreground">
-          The days of the week the Habit is due. A change applies from today; earlier Days keep the
-          Schedule they had.
-        </p>
-      </form>
-      {habit.archiveDay === null && (
+        </form>
+      )}
+      {!archived && (
         <form action={archiveHabit.bind(null, habit.id)}>
           <Button type="submit" variant="outline">
             Archive Habit
