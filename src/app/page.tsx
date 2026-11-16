@@ -20,6 +20,8 @@ export default async function DayPage({
   // Malformed or future Day: fall back to today.
   if (!isValidDay(day) || day > today) redirect("/");
   const habits = core.habitsOn(day);
+  const due = habits.filter((h) => !h.opportunistic);
+  const opportunistic = habits.filter((h) => h.opportunistic);
 
   return (
     <main className="mx-auto flex max-w-md flex-col gap-6 p-6">
@@ -41,29 +43,45 @@ export default async function DayPage({
           .
         </p>
       ) : (
-        <ul className="flex flex-col gap-2">
-          {habits.map((habit) => (
-            <li
-              key={habit.id}
-              className="flex items-center gap-2 rounded-md border py-1 pr-1 pl-3 data-[state=done]:bg-muted"
-              data-state={habit.state}
-            >
-              <span
-                className={cn(
-                  "flex-1",
-                  habit.state !== "unrecorded" && "text-muted-foreground",
-                  habit.state === "done" && "line-through",
-                )}
-              >
-                {habit.name}
-              </span>
-              <StateButton habit={habit} day={day} outcome="notDone" />
-              <StateButton habit={habit} day={day} outcome="done" />
-            </li>
-          ))}
-        </ul>
+        <>
+          {due.length > 0 && <HabitList habits={due} day={day} />}
+          {opportunistic.length > 0 && (
+            <section aria-labelledby="when-it-comes-up" className="flex flex-col gap-2">
+              <h2 id="when-it-comes-up" className="text-sm font-medium text-muted-foreground">
+                When it comes up
+              </h2>
+              <HabitList habits={opportunistic} day={day} />
+            </section>
+          )}
+        </>
       )}
     </main>
+  );
+}
+
+function HabitList({ habits, day }: { habits: HabitOnDay[]; day: Day }) {
+  return (
+    <ul className="flex flex-col gap-2">
+      {habits.map((habit) => (
+        <li
+          key={habit.id}
+          className="flex items-center gap-2 rounded-md border py-1 pr-1 pl-3 data-[state=done]:bg-muted"
+          data-state={habit.state}
+        >
+          <span
+            className={cn(
+              "flex-1",
+              habit.state !== "unrecorded" && "text-muted-foreground",
+              habit.state === "done" && "line-through",
+            )}
+          >
+            {habit.name}
+          </span>
+          <StateButton habit={habit} day={day} outcome="notDone" />
+          <StateButton habit={habit} day={day} outcome="done" />
+        </li>
+      ))}
+    </ul>
   );
 }
 

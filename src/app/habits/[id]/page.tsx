@@ -1,23 +1,13 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getCore } from "@/core";
-import { weekdays, type Weekday } from "@/core/day";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { archiveHabit, renameHabit, setSchedule, setStartDay } from "../../actions";
+import { ScheduleField } from "./schedule-field";
 
 export const dynamic = "force-dynamic";
-
-const weekdayLabels: Record<Weekday, string> = {
-  mon: "Mon",
-  tue: "Tue",
-  wed: "Wed",
-  thu: "Thu",
-  fri: "Fri",
-  sat: "Sat",
-  sun: "Sun",
-};
 
 export default async function HabitPage({
   params,
@@ -72,25 +62,7 @@ export default async function HabitPage({
       {/* An Archived Habit's Schedule can't change, so its section is hidden. */}
       {!archived && (
         <form action={setSchedule.bind(null, habit.id)} className="flex flex-col gap-2">
-          <fieldset className="flex flex-col gap-2">
-            <legend className="mb-2 text-sm font-medium">Schedule</legend>
-            <div className="flex flex-wrap gap-2">
-              {weekdays.map((day) => (
-                <label
-                  key={day}
-                  className="flex items-center gap-1.5 rounded-md border px-2 py-1 text-sm has-checked:bg-muted"
-                >
-                  <input
-                    type="checkbox"
-                    name="weekdays"
-                    value={day}
-                    defaultChecked={schedule.weekdays.includes(day)}
-                  />
-                  {weekdayLabels[day]}
-                </label>
-              ))}
-            </div>
-          </fieldset>
+          <ScheduleField schedule={schedule} />
           <Button type="submit" className="self-start">
             Save
           </Button>
@@ -100,8 +72,8 @@ export default async function HabitPage({
             </p>
           )}
           <p className="text-sm text-muted-foreground">
-            The days of the week the Habit is due. A change applies from today; earlier Days keep
-            the Schedule they had.
+            The days of the week the Habit is due, or no fixed days to record it on any Day it comes
+            up. A change applies from today; earlier Days keep the Schedule they had.
           </p>
         </form>
       )}
