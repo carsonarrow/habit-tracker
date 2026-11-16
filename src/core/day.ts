@@ -24,3 +24,13 @@ export function addDays(day: Day, delta: number): Day {
   d.setUTCDate(d.getUTCDate() + delta);
   return d.toISOString().slice(0, 10);
 }
+
+/** The days of the week, in display order. */
+export const weekdays = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
+export type Weekday = (typeof weekdays)[number];
+
+/** The day of the week `day` falls on. */
+export function weekdayOf(day: Day): Weekday {
+  // getUTCDay: 0 = Sunday.
+  return weekdays[(new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7];
+}

@@ -1,10 +1,13 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { openDb } from "./db";
 import { createCore, type HabitState } from "./core";
 import { sql } from "drizzle-orm";
+import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
 const dirs: string[] = [];
 afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })));
@@ -396,5 +399,306 @@ describe("Deleting a Habit", () => {
   it("throws for an unknown Habit", () => {
     const { core } = makeCore();
     expect(() => core.deleteHabit(99)).toThrow(/not found/);
+  });
+});
+
+// 2026-03-10, the default "now", is a Tuesday.
+const everyDay = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+
+describe("Schedule", () => {
+  it("a new Habit is due every day of the week", () => {
+    const { core } = makeCore();
+    const habit = core.addHabit("Read");
+    expect(core.scheduleOf(habit.id)).toEqual(everyDay);
+  });
+
+  it("hides the Habit on a Day it isn't due and rejects recording or clearing there", () => {
+    const { core } = makeCore();
+    const read = core.addHabit("Read");
+    core.addHabit("Walk");
+    expect(core.setSchedule(read.id, ["mon", "wed"])).toEqual(["mon", "wed"]);
+    expect(core.scheduleOf(read.id)).toEqual(["mon", "wed"]);
+    expect(core.habitsForToday().map((h) => h.name)).toEqual(["Walk"]);
+    expect(() => core.setState(read.id, "done")).toThrow(/not due/i);
+    expect(() => core.setState(read.id, "notDone")).toThrow(/not due/i);
+    expect(() => core.setState(read.id, "unrecorded")).toThrow(/not due/i);
+  });
+
+  it("applies from today: a Habit made due today appears on today's Check-in straight away", () => {
+    const { core } = makeCore();
+    const habit = core.addHabit("Read");
+    core.setSchedule(habit.id, ["mon"]);
+    expect(core.habitsForToday()).toEqual([]);
+    core.setSchedule(habit.id, ["tue", "thu"]);
+    expect(core.habitsForToday()).toMatchObject([{ name: "Read", state: "unrecorded" }]);
+    core.setState(habit.id, "done");
+    expect(core.habitsForToday()).toMatchObject([{ state: "done" }]);
+  });
+
+  it("rejects an empty or invalid set of weekdays, leaving the Schedule unchanged", () => {
+    const { core } = makeCore();
+    const habit = core.addHabit("Read");
+    core.setSchedule(habit.id, ["tue", "fri"]);
+    expect(() => core.setSchedule(habit.id, [])).toThrow(/at least one/i);
+    expect(() => core.setSchedule(habit.id, ["tue", "funday"])).toThrow(/weekday.*funday/i);
+    expect(core.scheduleOf(habit.id)).toEqual(["tue", "fri"]);
+  });
+
+  it("stores weekdays in Mon..Sun order without duplicates", () => {
+    const { core } = makeCore();
+    const habit = core.addHabit("Read");
+    expect(core.setSchedule(habit.id, ["sun", "mon", "sun", "wed"])).toEqual(["mon", "wed", "sun"]);
+    expect(core.scheduleOf(habit.id)).toEqual(["mon", "wed", "sun"]);
+  });
+
+  it("throws for an unknown Habit", () => {
+    const { core } = makeCore();
+    expect(() => core.setSchedule(999, ["mon"])).toThrow(/not found/i);
+    expect(() => core.scheduleOf(999)).toThrow(/not found/i);
+  });
+
+  it("reads earlier Days under the Schedule in effect then", () => {
+    const { core, setNow } = makeCore({ now: new Date("2026-03-08T12:00:00Z") }); // Sunday
+    const habit = core.addHabit("Read");
+    core.setState(habit.id, "done");
+    setNow(new Date("2026-03-10T12:00:00Z")); // Tuesday
+    core.setState(habit.id, "notDone", "2026-03-09");
+    core.setSchedule(habit.id, ["wed"]);
+
+    expect(core.habitsOn("2026-03-08")).toMatchObject([{ state: "done" }]);
+    expect(core.habitsOn("2026-03-09")).toMatchObject([{ state: "notDone" }]);
+    expect(core.habitsOn("2026-03-10")).toEqual([]);
+    core.setState(habit.id, "unrecorded", "2026-03-09");
+    expect(core.habitsOn("2026-03-09")).toMatchObject([{ state: "unrecorded" }]);
+
+    setNow(new Date("2026-03-12T12:00:00Z")); // Thursday
+    core.setSchedule(habit.id, ["thu"]);
+    expect(core.habitsOn("2026-03-11")).toMatchObject([{ state: "unrecorded" }]);
+    expect(core.habitsOn("2026-03-12")).toMatchObject([{ state: "unrecorded" }]);
+    expect(core.habitsOn("2026-03-10")).toEqual([]);
+    expect(core.habitsOn("2026-03-08")).toMatchObject([{ state: "done" }]);
+  });
+
+  it("covers a backdated Start Day with the earliest Schedule", () => {
+    const { core, setNow } = makeCore({ now: new Date("2026-03-09T12:00:00Z") }); // Monday
+    const habit = core.addHabit("Read");
+    setNow(new Date("2026-03-10T12:00:00Z"));
+    core.setSchedule(habit.id, ["tue"]);
+    core.setStartDay(habit.id, "2026-03-02"); // the Monday before
+    // Before the change, the every-day Schedule applies, back to the new Start Day.
+    for (const day of ["2026-03-02", "2026-03-05", "2026-03-08", "2026-03-09"]) {
+      expect(core.habitsOn(day)).toMatchObject([{ name: "Read", state: "unrecorded" }]);
+    }
+    core.setState(habit.id, "done", "2026-03-05");
+    expect(core.habitsOn("2026-03-05")).toMatchObject([{ state: "done" }]);
+  });
+
+  it("uses the earliest Schedule for backdated Days when it was set after the Habit was added", () => {
+    const { core } = makeCore();
+    const habit = core.addHabit("Read");
+    core.setSchedule(habit.id, ["sat"]); // replaces today's (only) version
+    core.setStartDay(habit.id, "2026-03-01"); // Sunday
+    expect(core.habitsOn("2026-03-01")).toEqual([]);
+    expect(core.habitsOn("2026-03-07")).toMatchObject([{ name: "Read" }]);
+  });
+
+  it("keeps backdated Days under their Schedule when it is changed the Day the Habit was added", () => {
+    const { core } = makeCore();
+    const habit = core.addHabit("Read");
+    core.setStartDay(habit.id, "2026-03-05"); // Thursday
+    core.setState(habit.id, "done", "2026-03-06"); // Friday
+    core.setSchedule(habit.id, ["sat"]);
+    core.setSchedule(habit.id, ["tue", "sat"]);
+    expect(core.habitsOn("2026-03-05")).toMatchObject([{ state: "unrecorded" }]);
+    expect(core.habitsOn("2026-03-06")).toMatchObject([{ state: "done" }]);
+    expect(core.habitsOn("2026-03-09")).toMatchObject([{ state: "unrecorded" }]);
+    core.setState(habit.id, "unrecorded", "2026-03-06");
+    expect(core.habitsForToday()).toMatchObject([{ name: "Read" }]);
+  });
+
+  it("keeps a Start Day on a weekday the Habit isn't due; it first appears on its first Day due", () => {
+    const { core, setNow } = makeCore({ now: new Date("2026-03-03T12:00:00Z") }); // Tuesday
+    const habit = core.addHabit("Read");
+    core.setSchedule(habit.id, ["thu"]);
+    expect(core.getHabit(habit.id)?.startDay).toBe("2026-03-03");
+    setNow(new Date("2026-03-10T12:00:00Z"));
+    expect(core.habitsOn("2026-03-03")).toEqual([]);
+    expect(core.habitsOn("2026-03-04")).toEqual([]);
+    expect(core.habitsOn("2026-03-05")).toMatchObject([{ name: "Read" }]);
+    expect(() => core.setState(habit.id, "done", "2026-03-03")).toThrow(/not due/i);
+  });
+
+  describe("protecting today's Check-in", () => {
+    // 2026-03-10 is a Tuesday.
+    it.each([
+      ["Done", "done"],
+      ["Not done", "notDone"],
+    ] as const)(
+      "rejects dropping today's weekday while today has a %s Check-in, leaving it unchanged",
+      (_label, state) => {
+        const { core } = makeCore();
+        const habit = core.addHabit("Read");
+        core.setState(habit.id, state);
+        expect(() => core.setSchedule(habit.id, ["mon", "wed"])).toThrow(/check-in today.*clear/i);
+        expect(core.scheduleOf(habit.id)).toEqual(everyDay);
+        expect(core.habitsForToday()).toMatchObject([{ name: "Read", state }]);
+      },
+    );
+
+    it("accepts the same change once today's Check-in is cleared", () => {
+      const { core } = makeCore();
+      const habit = core.addHabit("Read");
+      core.setState(habit.id, "done");
+      expect(() => core.setSchedule(habit.id, ["mon"])).toThrow(/check-in today/i);
+      core.setState(habit.id, "unrecorded");
+      expect(core.setSchedule(habit.id, ["mon"])).toEqual(["mon"]);
+      expect(core.habitsForToday()).toEqual([]);
+    });
+
+    it.each([
+      ["Done", "done"],
+      ["Not done", "notDone"],
+      ["Unrecorded", "unrecorded"],
+    ] as const)("accepts a change that keeps today due when today is %s", (_label, state) => {
+      const { core } = makeCore();
+      const habit = core.addHabit("Read");
+      core.setState(habit.id, state);
+      expect(core.setSchedule(habit.id, ["tue", "fri"])).toEqual(["tue", "fri"]);
+      expect(core.habitsForToday()).toMatchObject([{ name: "Read", state }]);
+    });
+  });
+
+  it("saving several times in one Day leaves only the last; saving the current one changes nothing", () => {
+    const { core, setNow } = makeCore({ now: new Date("2026-03-09T12:00:00Z") });
+    const habit = core.addHabit("Read");
+    setNow(new Date("2026-03-10T12:00:00Z"));
+    core.setSchedule(habit.id, ["mon"]);
+    core.setSchedule(habit.id, ["wed"]);
+    core.setSchedule(habit.id, ["tue", "wed"]);
+    expect(core.scheduleOf(habit.id)).toEqual(["tue", "wed"]);
+    expect(core.setSchedule(habit.id, ["wed", "tue"])).toEqual(["tue", "wed"]);
+    expect(core.habitsOn("2026-03-09")).toMatchObject([{ name: "Read" }]);
+    expect(core.habitsOn("2026-03-10")).toMatchObject([{ name: "Read" }]);
+    setNow(new Date("2026-03-12T12:00:00Z"));
+    expect(core.habitsOn("2026-03-11")).toMatchObject([{ name: "Read" }]);
+    expect(core.habitsOn("2026-03-12")).toEqual([]);
+  });
+
+  it("takes weekdays from Days in the configured time zone", () => {
+    const { core, setNow } = makeCore({
+      now: new Date("2026-03-10T03:00:00Z"), // Monday 23:00 in New York, Tuesday in UTC
+      timeZone: "America/New_York",
+    });
+    const habit = core.addHabit("Read");
+    core.setSchedule(habit.id, ["mon"]);
+    expect(core.habitsForToday()).toMatchObject([{ name: "Read" }]);
+    core.setState(habit.id, "done");
+    setNow(new Date("2026-03-10T04:00:00Z")); // midnight in New York: Tuesday
+    expect(core.habitsForToday()).toEqual([]);
+    expect(core.habitsOn("2026-03-09")).toMatchObject([{ state: "done" }]);
+  });
+
+  it("is removed with its Habit, leaving other Habits' Schedules alone", () => {
+    const { core, setNow } = makeCore();
+    const read = core.addHabit("Read");
+    const walk = core.addHabit("Walk");
+    core.setSchedule(read.id, ["mon"]);
+    core.setSchedule(walk.id, ["tue"]);
+    setNow(new Date("2026-03-11T12:00:00Z"));
+    core.setSchedule(read.id, ["wed"]);
+    core.deleteHabit(read.id);
+    expect(() => core.scheduleOf(read.id)).toThrow(/not found/i);
+    expect(core.scheduleOf(walk.id)).toEqual(["tue"]);
+    expect(core.habitsOn("2026-03-10").map((h) => h.name)).toEqual(["Walk"]);
+  });
+
+  it("after migration, every existing Habit is due every Day with all its Check-ins visible", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "habits-"));
+    dirs.push(dir);
+    // A database as it was before Schedules: every migration up to the one adding them.
+    const before = path.join(dir, "drizzle");
+    cpSync(path.join(process.cwd(), "drizzle"), before, { recursive: true });
+    const journalFile = path.join(before, "meta", "_journal.json");
+    const journal = JSON.parse(readFileSync(journalFile, "utf8"));
+    const schedulesAt = journal.entries.findIndex((e: { tag: string }) => e.tag.startsWith("0004"));
+    journal.entries = journal.entries.slice(0, schedulesAt);
+    writeFileSync(journalFile, JSON.stringify(journal));
+    const file = path.join(dir, "test.db");
+    const sqlite = new Database(file);
+    migrate(drizzle(sqlite), { migrationsFolder: before });
+    sqlite.exec(`
+      INSERT INTO habits (id, name, start_day, created_at) VALUES (1, 'Read', '2026-03-02', 0);
+      INSERT INTO check_ins (habit_id, day, outcome) VALUES
+        (1, '2026-03-02', 'done'), (1, '2026-03-05', 'notDone'), (1, '2026-03-08', 'done');
+    `);
+    sqlite.close();
+
+    const core = createCore({
+      db: openDb(file),
+      now: () => new Date("2026-03-10T12:00:00Z"),
+      timeZone: "UTC",
+    });
+    expect(core.scheduleOf(1)).toEqual(everyDay);
+    const states = ["2026-03-02", "2026-03-03", "2026-03-05", "2026-03-08", "2026-03-10"].map(
+      (day) => core.habitsOn(day).map((h) => h.state),
+    );
+    expect(states).toEqual([["done"], ["unrecorded"], ["notDone"], ["done"], ["unrecorded"]]);
+  });
+});
+
+describe("Schedules for Archived Habits", () => {
+  it("rejects changing an Archived Habit's Schedule, leaving it unchanged", () => {
+    const { core } = makeCore();
+    const habit = core.addHabit("Read");
+    core.setSchedule(habit.id, ["tue", "fri"]);
+    core.archiveHabit(habit.id);
+    expect(() => core.setSchedule(habit.id, ["mon"])).toThrow(/archived/i);
+    expect(core.scheduleOf(habit.id)).toEqual(["tue", "fri"]);
+  });
+
+  it("shows read-only on past Days only where it was due under the Schedule in effect then", () => {
+    const { core, setNow } = makeCore({ now: new Date("2026-03-08T12:00:00Z") }); // Sunday
+    const habit = core.addHabit("Read");
+    core.setState(habit.id, "done");
+    setNow(new Date("2026-03-10T12:00:00Z")); // Tuesday
+    core.setSchedule(habit.id, ["wed"]);
+    setNow(new Date("2026-03-11T12:00:00Z")); // Wednesday
+    core.setState(habit.id, "notDone");
+    setNow(new Date("2026-03-13T12:00:00Z")); // Friday
+    core.archiveHabit(habit.id);
+
+    const shown = ["2026-03-08", "2026-03-09", "2026-03-10", "2026-03-11", "2026-03-12"].map(
+      (day) => core.habitsOn(day).map((h) => ({ state: h.state, readOnly: h.readOnly })),
+    );
+    expect(shown).toEqual([
+      [{ state: "done", readOnly: true }], // Sun: every day, as first set
+      [{ state: "unrecorded", readOnly: true }], // Mon: every day, as first set
+      [], // Tue: Wednesdays only from here
+      [{ state: "notDone", readOnly: true }], // Wed
+      [], // Thu
+    ]);
+  });
+
+  it("once restored, keeps the Schedule it had when archived and is due on those weekdays from today", () => {
+    const { core, setNow } = makeCore({ now: new Date("2026-03-09T12:00:00Z") }); // Monday
+    const habit = core.addHabit("Read");
+    setNow(new Date("2026-03-10T12:00:00Z")); // Tuesday
+    core.setSchedule(habit.id, ["tue", "thu"]);
+    setNow(new Date("2026-03-11T12:00:00Z")); // Wednesday
+    core.archiveHabit(habit.id);
+    setNow(new Date("2026-03-16T12:00:00Z")); // Monday
+    core.restoreHabit(habit.id);
+
+    expect(core.scheduleOf(habit.id)).toEqual(["tue", "thu"]);
+    expect(core.habitsForToday()).toEqual([]);
+    expect(() => core.setState(habit.id, "done")).toThrow(/not due/i);
+    setNow(new Date("2026-03-17T12:00:00Z")); // Tuesday
+    expect(core.habitsForToday()).toMatchObject([
+      { name: "Read", state: "unrecorded", readOnly: false },
+    ]);
+    core.setState(habit.id, "done");
+    expect(core.habitsForToday()).toMatchObject([{ state: "done" }]);
+    // Active again, so its Schedule can change.
+    expect(core.setSchedule(habit.id, ["tue", "sat"])).toEqual(["tue", "sat"]);
   });
 });
