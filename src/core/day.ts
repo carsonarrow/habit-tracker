@@ -34,3 +34,32 @@ export function weekdayOf(day: Day): Weekday {
   // getUTCDay: 0 = Sunday.
   return weekdays[(new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7];
 }
+
+/** A readable label for `day`, e.g. "Mon, 16 Nov"; the year is added when it isn't today's year. */
+export function formatDay(day: Day, today: Day): string {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: "UTC",
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    })
+      .formatToParts(new Date(`${day}T00:00:00Z`))
+      .map((p) => [p.type, p.value]),
+  );
+  const label = `${parts.weekday}, ${parts.day} ${parts.month}`;
+  return day.slice(0, 4) === today.slice(0, 4) ? label : `${label} ${parts.year}`;
+}
+
+/** `day` as a local Date at noon (safe across DST gaps), for date pickers. */
+export function toLocalDate(day: Day): Date {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(y, m - 1, d, 12);
+}
+
+/** The Day of a local Date picked in a date picker. */
+export function fromLocalDate(date: Date): Day {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())}`;
+}
