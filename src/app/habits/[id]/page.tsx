@@ -1,4 +1,6 @@
 import { Button } from "@/components/ui/button";
+import { DayPickerField } from "@/components/day-picker-field";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { getCore } from "@/core";
 import { weekdays, type Weekday } from "@/core/day";
@@ -45,17 +47,16 @@ export default async function HabitPage({
         <Button type="submit">Save</Button>
       </form>
       <form action={setStartDay.bind(null, habit.id)} className="flex flex-col gap-2">
-        <label htmlFor="startDay" className="text-sm font-medium">
+        <label id="startDayLabel" htmlFor="startDay" className="text-sm font-medium">
           Start Day
         </label>
         <div className="flex gap-2">
-          <Input
+          <DayPickerField
             id="startDay"
+            labelId="startDayLabel"
             name="startDay"
-            type="date"
             defaultValue={habit.startDay}
-            max={core.today()}
-            required
+            today={core.today()}
           />
           <Button type="submit">Save</Button>
         </div>
@@ -74,18 +75,13 @@ export default async function HabitPage({
         <form action={setSchedule.bind(null, habit.id)} className="flex flex-col gap-2">
           <fieldset className="flex flex-col gap-2">
             <legend className="mb-2 text-sm font-medium">Schedule</legend>
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-7 gap-1.5">
               {weekdays.map((day) => (
                 <label
                   key={day}
-                  className="flex items-center gap-1.5 rounded-md border px-2 py-1 text-sm has-checked:bg-muted"
+                  className="flex cursor-pointer flex-col items-center gap-1.5 rounded-md border py-2 text-sm has-data-[state=checked]:bg-muted"
                 >
-                  <input
-                    type="checkbox"
-                    name="weekdays"
-                    value={day}
-                    defaultChecked={schedule.includes(day)}
-                  />
+                  <Checkbox name="weekdays" value={day} defaultChecked={schedule.includes(day)} />
                   {weekdayLabels[day]}
                 </label>
               ))}

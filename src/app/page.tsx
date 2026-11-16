@@ -22,15 +22,15 @@ export default async function DayPage({
   const habits = core.habitsOn(day);
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-6 p-6">
-      <div className="flex items-center gap-2">
-        <div className="flex-1">
-          <DayNav day={day} today={today} />
-        </div>
-        <Link href="/habits" aria-label="Manage Habits" className="p-2 text-muted-foreground">
-          <Settings className="size-5" />
-        </Link>
-      </div>
+    <main className="mx-auto flex max-w-md flex-col gap-6 p-6 pt-14 md:pt-6">
+      <Link
+        href="/habits"
+        aria-label="Manage Habits"
+        className="absolute top-3 right-3 rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+      >
+        <Settings className="size-5" />
+      </Link>
+      <DayNav day={day} today={today} />
 
       {habits.length === 0 ? (
         <p className="text-muted-foreground">
@@ -49,11 +49,7 @@ export default async function DayPage({
               data-state={habit.state}
             >
               <span
-                className={cn(
-                  "flex-1",
-                  habit.state !== "unrecorded" && "text-muted-foreground",
-                  habit.state === "done" && "line-through",
-                )}
+                className={cn("flex-1", habit.state !== "unrecorded" && "text-muted-foreground")}
               >
                 {habit.name}
               </span>
@@ -69,23 +65,25 @@ export default async function DayPage({
 
 type Outcome = Exclude<HabitState, "unrecorded">;
 
-const outcomeButtons: Record<Outcome, { label: string; Icon: LucideIcon; pressed: string }> = {
+// Unpressed, hover previews the outcome's colour; pressed, hover darkens the fill (a click clears it).
+const outcomeButtons: Record<Outcome, { label: string; Icon: LucideIcon; styles: string }> = {
   done: {
     label: "Done",
     Icon: Check,
-    pressed:
-      "aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground",
+    styles:
+      "enabled:hover:border-primary enabled:hover:text-primary aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground enabled:aria-pressed:hover:bg-primary/90 enabled:aria-pressed:hover:text-primary-foreground",
   },
   notDone: {
     label: "Not done",
     Icon: X,
-    pressed: "aria-pressed:border-destructive aria-pressed:bg-destructive aria-pressed:text-white",
+    styles:
+      "enabled:hover:border-destructive enabled:hover:text-destructive aria-pressed:border-destructive aria-pressed:bg-destructive aria-pressed:text-white enabled:aria-pressed:hover:bg-destructive/90 enabled:aria-pressed:hover:text-white",
   },
 };
 
 /** Records `outcome`, or clears back to Unrecorded when it is already the Habit's state. */
 function StateButton({ habit, day, outcome }: { habit: HabitOnDay; day: Day; outcome: Outcome }) {
-  const { label, Icon, pressed } = outcomeButtons[outcome];
+  const { label, Icon, styles } = outcomeButtons[outcome];
   const active = habit.state === outcome;
   return (
     <form action={setState.bind(null, habit.id, active ? "unrecorded" : outcome, day)}>
@@ -95,8 +93,8 @@ function StateButton({ habit, day, outcome }: { habit: HabitOnDay; day: Day; out
         aria-pressed={active}
         aria-label={`${label}: ${habit.name}`}
         className={cn(
-          "flex size-9 items-center justify-center rounded-md border text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60",
-          pressed,
+          "flex size-9 items-center justify-center rounded-md border text-muted-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+          styles,
         )}
       >
         <Icon className="size-4" />

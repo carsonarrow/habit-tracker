@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getCore } from "@/core";
+import { formatDay } from "@/core/day";
 import { ArrowLeft, Pencil } from "lucide-react";
 import Link from "next/link";
 import { addHabit } from "../actions";
@@ -8,7 +9,9 @@ import { addHabit } from "../actions";
 export const dynamic = "force-dynamic";
 
 export default function ManageHabitsPage() {
-  const habits = getCore().activeHabits();
+  const core = getCore();
+  const habits = core.activeHabits();
+  const today = core.today();
 
   return (
     <main className="mx-auto flex max-w-md flex-col gap-6 p-6">
@@ -29,7 +32,9 @@ export default function ManageHabitsPage() {
                 className="flex items-center gap-3 rounded-md border px-3 py-2"
               >
                 <span className="flex-1">{habit.name}</span>
-                <span className="text-sm text-muted-foreground">Since {habit.startDay}</span>
+                <span className="text-sm text-muted-foreground">
+                  Since {formatDay(habit.startDay, today)}
+                </span>
                 <Pencil className="size-4 text-muted-foreground" />
               </Link>
             </li>
