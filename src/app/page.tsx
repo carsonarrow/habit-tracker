@@ -5,6 +5,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { DayNav } from "./day-nav";
 import { setState } from "./actions";
+import { summarizeWhenItComesUp } from "./when-it-comes-up";
+import { WhenItComesUpSection } from "./when-it-comes-up-section";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -46,12 +48,9 @@ export default async function DayPage({
         <>
           {due.length > 0 && <HabitList habits={due} day={day} />}
           {opportunistic.length > 0 && (
-            <section aria-labelledby="when-it-comes-up" className="flex flex-col gap-2">
-              <h2 id="when-it-comes-up" className="text-sm font-medium text-muted-foreground">
-                When it comes up
-              </h2>
+            <WhenItComesUpSection key={day} summary={summarizeWhenItComesUp(opportunistic)}>
               <HabitList habits={opportunistic} day={day} />
-            </section>
+            </WhenItComesUpSection>
           )}
         </>
       )}
@@ -68,9 +67,7 @@ function HabitList({ habits, day }: { habits: HabitOnDay[]; day: Day }) {
           className="flex items-center gap-2 rounded-md border py-1 pr-1 pl-3 data-[state=done]:bg-muted"
           data-state={habit.state}
         >
-          <span
-            className={cn("flex-1", habit.state !== "unrecorded" && "text-muted-foreground")}
-          >
+          <span className={cn("flex-1", habit.state !== "unrecorded" && "text-muted-foreground")}>
             {habit.name}
           </span>
           <StateButton habit={habit} day={day} outcome="notDone" />
