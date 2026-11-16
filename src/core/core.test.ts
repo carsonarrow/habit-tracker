@@ -861,3 +861,117 @@ describe("Opportunistic Habits", () => {
     expect(core.habitsForToday()).toMatchObject([{ state: "done", opportunistic: true }]);
   });
 });
+
+describe("Archived Opportunistic Habits", () => {
+  it("shows read-only only on earlier Days with a Check-in, never from its archive Day", () => {
+    const { core, setNow } = makeCore({ now: new Date("2026-03-02T12:00:00Z") }); // Monday
+    const habit = core.addHabit("Take the stairs");
+    core.setSchedule(habit.id, noFixedDays);
+    core.setState(habit.id, "done", "2026-03-02");
+    core.setState(habit.id, "unrecorded", "2026-03-02");
+    setNow(new Date("2026-03-04T12:00:00Z")); // Wednesday
+    core.setState(habit.id, "done");
+    setNow(new Date("2026-03-06T12:00:00Z")); // Friday
+    core.setState(habit.id, "notDone");
+    setNow(new Date("2026-03-08T12:00:00Z")); // Sunday
+    core.setState(habit.id, "done");
+    core.archiveHabit(habit.id); // archive Day, which has a Check-in
+    setNow(new Date("2026-03-10T12:00:00Z")); // Tuesday
+
+    const days = [
+      "2026-03-02",
+      "2026-03-03",
+      "2026-03-04",
+      "2026-03-05",
+      "2026-03-06",
+      "2026-03-07",
+      "2026-03-08",
+      "2026-03-10",
+    ];
+    const shown = days.map((day) =>
+      core.habitsOn(day).map((h) => ({ state: h.state, readOnly: h.readOnly })),
+    );
+    expect(shown).toEqual([
+      [], // Mon: Check-in cleared
+      [], // Tue: nothing recorded
+      [{ state: "done", readOnly: true }], // Wed
+      [], // Thu: nothing recorded
+      [{ state: "notDone", readOnly: true }], // Fri
+      [], // Sat: nothing recorded
+      [], // Sun: archive Day, despite its Check-in
+      [], // Tue: after archiving
+    ]);
+  });
+
+  it("keeps showing every due Day from before it was switched to no fixed days", () => {
+    const { core, setNow } = makeCore({ now: new Date("2026-03-02T12:00:00Z") }); // Monday
+    const habit = core.addHabit("Take the stairs");
+    core.setSchedule(habit.id, onWeekdays("mon", "wed"));
+    setNow(new Date("2026-03-05T12:00:00Z")); // Thursday
+    core.setSchedule(habit.id, noFixedDays);
+    setNow(new Date("2026-03-10T12:00:00Z")); // Tuesday
+    core.setState(habit.id, "done", "2026-03-06"); // Friday
+    core.archiveHabit(habit.id);
+
+    const shown = ["2026-03-02", "2026-03-04", "2026-03-05", "2026-03-06", "2026-03-09"].map(
+      (day) => core.habitsOn(day).map((h) => ({ state: h.state, opportunistic: h.opportunistic })),
+    );
+    expect(shown).toEqual([
+      [{ state: "unrecorded", opportunistic: false }], // Mon, due
+      [{ state: "unrecorded", opportunistic: false }], // Wed, due
+      [], // no fixed days from here, nothing recorded
+      [{ state: "done", opportunistic: true }],
+      [],
+    ]);
+  });
+
+  it("rejects recording on any Day and changing its Schedule, leaving both unchanged", () => {
+    const { core } = makeCore();
+    const habit = core.addHabit("Take the stairs");
+    core.setSchedule(habit.id, noFixedDays); // replaces today's (only) version
+    core.setStartDay(habit.id, "2026-03-08");
+    core.setState(habit.id, "done", "2026-03-08");
+    core.archiveHabit(habit.id);
+
+    for (const day of ["2026-03-08", "2026-03-09", "2026-03-10"]) {
+      for (const state of ["done", "notDone", "unrecorded"] as const) {
+        expect(() => core.setState(habit.id, state, day)).toThrow(/archived/i);
+      }
+    }
+    expect(() => core.setSchedule(habit.id, onWeekdays("mon"))).toThrow(/archived/i);
+    expect(core.scheduleOf(habit.id)).toEqual(noFixedDays);
+    expect(core.habitsOn("2026-03-08")).toMatchObject([{ state: "done", readOnly: true }]);
+    expect(core.habitsOn("2026-03-09")).toEqual([]);
+  });
+
+  it("once restored, is listed and recordable on every Day from its Start Day with no gap", () => {
+    const { core, setNow } = makeCore({ now: new Date("2026-03-02T12:00:00Z") }); // Monday
+    const habit = core.addHabit("Take the stairs");
+    core.setSchedule(habit.id, noFixedDays);
+    setNow(new Date("2026-03-04T12:00:00Z")); // Wednesday
+    core.setState(habit.id, "done");
+    core.archiveHabit(habit.id);
+    setNow(new Date("2026-03-10T12:00:00Z")); // Tuesday
+    core.restoreHabit(habit.id);
+
+    const days = ["2026-03-02", "2026-03-03", "2026-03-04", "2026-03-07", "2026-03-10"];
+    expect(days.map((day) => core.habitsOn(day))).toMatchObject([
+      [{ state: "unrecorded", readOnly: false, opportunistic: true }],
+      [{ state: "unrecorded", readOnly: false, opportunistic: true }],
+      [{ state: "done", readOnly: false, opportunistic: true }],
+      [{ state: "unrecorded", readOnly: false, opportunistic: true }],
+      [{ state: "unrecorded", readOnly: false, opportunistic: true }],
+    ]);
+    core.setState(habit.id, "notDone", "2026-03-03");
+    core.setState(habit.id, "done", "2026-03-07");
+    core.setState(habit.id, "done");
+    expect(days.map((day) => core.habitsOn(day).map((h) => h.state))).toEqual([
+      ["unrecorded"],
+      ["notDone"],
+      ["done"],
+      ["done"],
+      ["done"],
+    ]);
+    expect(core.habitsOn("2026-03-01")).toEqual([]);
+  });
+});

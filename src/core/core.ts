@@ -19,7 +19,8 @@ export type HabitState = (typeof habitStates)[number];
 
 /**
  * A Habit plus its state on a Day; `readOnly` when it is archived (shown only before its archive
- * Day); `opportunistic` when its Schedule that Day is no fixed days, so it is not due there.
+ * Day, and on an opportunistic Day only with a Check-in); `opportunistic` when its Schedule that
+ * Day is no fixed days, so it is not due there.
  */
 export type HabitOnDay = Habit & { state: HabitState; readOnly: boolean; opportunistic: boolean };
 
@@ -126,7 +127,13 @@ export function createCore({ db, now, timeZone }: CoreDeps) {
         outcome,
         schedule: scheduleOnDay(versionsByHabit.get(h.id) ?? [], day),
       }))
-      .filter(({ schedule }) => canRecordUnder(schedule, day))
+      .filter(({ habit, outcome, schedule }) =>
+        // An Archived Habit shows on a Day it was due, but on an opportunistic Day only with a
+        // Check-in: an empty one tells the user nothing (ADR 0002).
+        habit.archiveDay !== null && schedule.kind === "noFixedDays"
+          ? outcome !== null
+          : canRecordUnder(schedule, day),
+      )
       .map(({ habit, outcome, schedule }) => ({
         ...habit,
         state: outcome ?? "unrecorded",
